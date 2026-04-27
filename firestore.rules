@@ -1,0 +1,106 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {uid}
+    // Fields:
+    //   - id: string (required) - Internal ID
+    //   - uid: string (required) - Firebase Auth UID
+    //   - name: string (optional) - User's name
+    //   - email: string (required) - User's email
+    //   - goalType: string (optional) - 5k, 10k, etc.
+    //   - goalDate: string (optional) - Target date
+    //   - experienceLevel: string (optional) - beginner, intermediate, advanced
+    //   - preferredDays: list (optional) - Days of week
+    //   - weeklyMileagePreference: number (optional) - Target mileage
+    //   - isUnlocked: bool (optional) - Subscription status
+    //   - readinessScore: map (optional) - User's readiness metrics
+    //   - role: string (optional) - user, admin
+    //
+    // Collection: users/{uid}/workouts
+    // Document ID: {workoutId}
+    // Fields:
+    //   - id: string (required) - Workout ID
+    //   - uid: string (required) - Document owner UID
+    //   - date: string (required) - ISO 8601 date
+    //   - type: string (required) - Easy run, Long run, etc.
+    //   - durationMinutes: number (required)
+    //   - distanceTarget: number (optional)
+    //   - paceTarget: string (optional)
+    //   - effortTarget: number (optional)
+    //   - instructions: string (optional)
+    //   - status: string (required) - planned, completed
+    //   - result: map (optional) - Completion details
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+          (request.auth.token.email.lower() == "baitjet@gmail.com" && request.auth.token.email_verified == true)
+        );
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasOnlyAllowedFields(['id', 'uid', 'name', 'email', 'goalType', 'goalDate', 'experienceLevel', 'preferredDays', 'weeklyMileagePreference', 'isUnlocked', 'readinessScore', 'role', 'isHealthConnected', 'healthProvider']) &&
+             data.uid == request.auth.uid &&
+             data.email is string && isValidEmail(data.email) &&
+             (data.name == null || (data.name is string && data.name.size() < 100));
+    }
+
+    function isValidWorkout(data) {
+      return hasOnlyAllowedFields(['id', 'uid', 'date', 'type', 'durationMinutes', 'distanceTarget', 'paceTarget', 'effortTarget', 'instructions', 'status', 'result']) &&
+             data.uid == request.auth.uid &&
+             data.id is string && data.id.size() < 100 &&
+             data.date is string &&
+             data.type is string &&
+             data.status in ['planned', 'completed'];
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow create: if isOwner(uid) && isValidUser(request.resource.data) && (request.resource.data.role == 'user' || request.resource.data.role == null || isAdmin());
+      allow update: if isOwner(uid) && isValidUser(request.resource.data) && (request.resource.data.role == resource.data.role || isAdmin());
+      
+      match /workouts/{workoutId} {
+        allow read: if isOwner(uid) || isAdmin();
+        allow create: if isOwner(uid) && isValidWorkout(request.resource.data);
+        allow update: if isOwner(uid) && isValidWorkout(request.resource.data);
+        allow delete: if isOwner(uid) || isAdmin();
+      }
+    }
+  }
+}

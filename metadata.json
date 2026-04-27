@@ -1,0 +1,5 @@
+{
+  "name": "Jogga",
+  "description": "Personalized adaptive running coach for every runner.",
+  "requestFramePermissions": ["geolocation"]
+}

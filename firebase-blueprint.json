@@ -1,0 +1,53 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "User's personal information and fitness goals",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "goalType": { "type": "string", "enum": ["5k", "10k", "half-marathon", "marathon", "fitness"] },
+        "goalDate": { "type": "string" },
+        "experienceLevel": { "type": "string", "enum": ["beginner", "intermediate", "advanced"] },
+        "preferredDays": { "type": "array", "items": { "type": "number" } },
+        "weeklyMileagePreference": { "type": "number" },
+        "isUnlocked": { "type": "boolean" },
+        "readinessScore": { "type": "object" },
+        "role": { "type": "string" }
+      },
+      "required": ["id", "uid", "email"]
+    },
+    "Workout": {
+      "title": "Workout",
+      "description": "A single planned or completed workout",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "date": { "type": "string" },
+        "type": { "type": "string" },
+        "durationMinutes": { "type": "number" },
+        "distanceTarget": { "type": "number" },
+        "paceTarget": { "type": "string" },
+        "effortTarget": { "type": "number" },
+        "instructions": { "type": "string" },
+        "status": { "type": "string", "enum": ["planned", "completed"] },
+        "result": { "type": "object" }
+      },
+      "required": ["id", "uid", "date", "type", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "UserProfile",
+      "description": "User profile document"
+    },
+    "/users/{uid}/workouts/{workoutId}": {
+      "schema": "Workout",
+      "description": "User's individual workouts"
+    }
+  }
+}
