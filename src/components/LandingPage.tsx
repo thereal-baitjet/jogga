@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { Activity, Check, ChevronRight, PlayCircle, ShieldCheck, Sparkles, Target, Zap } from 'lucide-react';
-import { BILLING_PLANS, CheckoutIntent, FREE_TRIAL_LABEL, PlanId } from '../config/billing';
+import { signInWithRedirect } from 'firebase/auth';
+import { auth, googleProvider } from '../firebase';
+import { BILLING_PLANS, CHECKOUT_INTENT_STORAGE_KEY, CheckoutIntent, FREE_TRIAL_LABEL, PlanId } from '../config/billing';
 import { trackEvent } from '../services/analyticsService';
 
 interface LandingPageProps {
@@ -65,11 +67,54 @@ const proofVideos = [
 ];
 
 export default function LandingPage({ onStart, authError }: LandingPageProps) {
-  const handleStart = (source: string, planId: PlanId = 'trial', trial = true) => {
+  const [loadingSource, setLoadingSource] = useState<string | null>(null);
+  const [localAuthError, setLocalAuthError] = useState<string | null>(null);
+
+  const persistCheckoutIntent = (intent: CheckoutIntent) => {
+    const serializedIntent = JSON.stringify(intent);
+
+    try {
+      window.sessionStorage.setItem(CHECKOUT_INTENT_STORAGE_KEY, serializedIntent);
+    } catch (error) {
+      console.error('Failed to store checkout intent in sessionStorage', error);
+    }
+
+    try {
+      window.localStorage.setItem(CHECKOUT_INTENT_STORAGE_KEY, serializedIntent);
+    } catch (error) {
+      console.error('Failed to store checkout intent in localStorage', error);
+    }
+  };
+
+  const handleStart = async (source: string, planId: PlanId = 'trial', trial = true) => {
+    if (loadingSource) return;
+
     const intent = { planId, trial, source };
     trackEvent('landing_cta_clicked', intent);
-    onStart(intent);
+    persistCheckoutIntent(intent);
+
+    const currentUser = auth.currentUser;
+    if (currentUser) {
+      onStart(intent);
+      return;
+    }
+
+    setLocalAuthError(null);
+    setLoadingSource(source);
+
+    try {
+      googleProvider.setCustomParameters({ prompt: 'select_account' });
+      await signInWithRedirect(auth, googleProvider);
+    } catch (error) {
+      console.error('Redirect login failed', error);
+      setLoadingSource(null);
+      setLocalAuthError(error instanceof Error ? error.message : 'Google sign-in could not start. Try again.');
+    }
   };
+
+  const getButtonText = (source: string, fallback: string) => (
+    loadingSource === source ? 'Opening Google...' : fallback
+  );
 
   const handleVideoPlay = (videoId: string) => {
     trackEvent('landing_social_proof_played', { video_id: videoId });
@@ -84,10 +129,11 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
             <span className="text-lg font-semibold tracking-tight">Jogga</span>
           </div>
           <button
-            onClick={() => handleStart('nav', 'monthly', true)}
+            onClick={() => handleStart('nav', 'trial', true)}
+            disabled={Boolean(loadingSource)}
             className="flex items-center gap-2 rounded-full bg-zinc-100 px-4 py-2 text-sm font-bold text-zinc-950 transition hover:bg-white active:scale-95"
           >
-            Start Trial
+            {getButtonText('nav', 'Start Trial')}
             <ChevronRight size={16} />
           </button>
         </div>
@@ -117,10 +163,11 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
 
             <div className="flex flex-col gap-3 sm:flex-row">
               <button
-                onClick={() => handleStart('hero_primary', 'monthly', true)}
-                className="flex items-center justify-center gap-2 rounded-full bg-zinc-100 px-6 py-4 text-sm font-bold text-zinc-950 shadow-xl shadow-black/30 transition hover:bg-white active:scale-95 sm:whitespace-nowrap"
+                onClick={() => handleStart('hero_primary', 'trial', true)}
+                disabled={Boolean(loadingSource)}
+                className="flex items-center justify-center gap-2 rounded-full bg-zinc-100 px-6 py-4 text-sm font-bold text-zinc-950 shadow-xl shadow-black/30 transition hover:bg-white active:scale-95 disabled:cursor-wait disabled:opacity-70 sm:whitespace-nowrap"
               >
-                Start {FREE_TRIAL_LABEL}
+                {getButtonText('hero_primary', `Start ${FREE_TRIAL_LABEL}`)}
                 <ChevronRight size={18} />
               </button>
               <a
@@ -138,11 +185,12 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
                 <button
                   key={option.id}
                   onClick={() => handleStart(`pricing_${option.id}`, option.planId, option.trial)}
+                  disabled={Boolean(loadingSource)}
                   className={`rounded-2xl border p-4 text-left transition active:scale-[0.98] ${
                     option.popular
                       ? 'border-yellow-300/40 bg-yellow-300/10 hover:bg-yellow-300/15'
                       : 'border-zinc-800 bg-zinc-900/70 hover:border-zinc-600 hover:bg-zinc-900'
-                  }`}
+                  } disabled:cursor-wait disabled:opacity-70`}
                 >
                   <div className="mb-3 flex items-center justify-between gap-2">
                     <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">{option.title}</span>
@@ -153,14 +201,16 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
                     )}
                   </div>
                   <div className="text-lg font-semibold text-zinc-50">{option.price}</div>
-                  <div className="mt-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500">{option.detail}</div>
+                  <div className="mt-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                    {getButtonText(`pricing_${option.id}`, option.detail)}
+                  </div>
                 </button>
               ))}
             </div>
 
-            {authError && (
+            {(localAuthError || authError) && (
               <p role="alert" className="max-w-lg rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-                {authError}
+                {localAuthError || authError}
               </p>
             )}
 
@@ -258,10 +308,11 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
               </p>
             </div>
             <button
-              onClick={() => handleStart('bottom_cta', 'monthly', true)}
-              className="flex w-full items-center justify-center gap-2 rounded-full bg-zinc-100 px-6 py-4 text-sm font-bold text-zinc-950 transition hover:bg-white active:scale-95 md:w-auto"
+              onClick={() => handleStart('bottom_cta', 'trial', true)}
+              disabled={Boolean(loadingSource)}
+              className="flex w-full items-center justify-center gap-2 rounded-full bg-zinc-100 px-6 py-4 text-sm font-bold text-zinc-950 transition hover:bg-white active:scale-95 disabled:cursor-wait disabled:opacity-70 md:w-auto"
             >
-              Continue with Google
+              {getButtonText('bottom_cta', 'Continue with Google')}
               <ChevronRight size={18} />
             </button>
           </div>

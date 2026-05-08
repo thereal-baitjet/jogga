@@ -93,12 +93,23 @@ function isCheckoutIntent(value: unknown): value is CheckoutIntent {
 function readStoredCheckoutIntent() {
   if (typeof window === 'undefined') return null;
 
-  try {
-    const storedIntent = window.sessionStorage.getItem(CHECKOUT_INTENT_STORAGE_KEY);
-    if (!storedIntent) return null;
+  const readStoredValue = (storage: Storage) => {
+    const storedIntent = storage.getItem(CHECKOUT_INTENT_STORAGE_KEY);
+    if (!storedIntent) return null as CheckoutIntent | null;
 
     const parsedIntent = JSON.parse(storedIntent);
     return isCheckoutIntent(parsedIntent) ? parsedIntent : null;
+  };
+
+  try {
+    const sessionIntent = readStoredValue(window.sessionStorage);
+    if (sessionIntent) return sessionIntent;
+  } catch {
+    // Ignore unavailable storage or malformed data and fall through.
+  }
+
+  try {
+    return readStoredValue(window.localStorage);
   } catch {
     return null;
   }
@@ -329,11 +340,18 @@ export default function App() {
 
   const savePendingCheckoutIntent = React.useCallback((intent: CheckoutIntent) => {
     setPendingCheckoutIntent(intent);
+    const serializedIntent = JSON.stringify(intent);
 
     try {
-      window.sessionStorage.setItem(CHECKOUT_INTENT_STORAGE_KEY, JSON.stringify(intent));
+      window.sessionStorage.setItem(CHECKOUT_INTENT_STORAGE_KEY, serializedIntent);
     } catch (error) {
-      console.error('Failed to store checkout intent', error);
+      console.error('Failed to store checkout intent in sessionStorage', error);
+    }
+
+    try {
+      window.localStorage.setItem(CHECKOUT_INTENT_STORAGE_KEY, serializedIntent);
+    } catch (error) {
+      console.error('Failed to store checkout intent in localStorage', error);
     }
   }, []);
 
@@ -343,7 +361,13 @@ export default function App() {
     try {
       window.sessionStorage.removeItem(CHECKOUT_INTENT_STORAGE_KEY);
     } catch (error) {
-      console.error('Failed to clear checkout intent', error);
+      console.error('Failed to clear checkout intent from sessionStorage', error);
+    }
+
+    try {
+      window.localStorage.removeItem(CHECKOUT_INTENT_STORAGE_KEY);
+    } catch (error) {
+      console.error('Failed to clear checkout intent from localStorage', error);
     }
   }, []);
 
@@ -1253,7 +1277,27 @@ export default function App() {
 
   const handleLandingStart = (intent: CheckoutIntent) => {
     savePendingCheckoutIntent(intent);
-    void handleLogin();
+
+    if (!user) {
+      setScreen('auth');
+      return;
+    }
+
+    if (!hasProfileLoaded) {
+      return;
+    }
+
+    if (!isCompleteUserProfile(accessRecord)) {
+      setScreen('onboarding');
+      return;
+    }
+
+    if (!hasPremiumAccess(accessRecord)) {
+      setScreen('subscription');
+      return;
+    }
+
+    setScreen('dashboard');
   };
 
   const handleLogout = async () => {
@@ -1676,7 +1720,6 @@ export default function App() {
               onManageSubscription={handleManageSubscription}
               onRestoreAccess={restoreSubscriptionAccess}
               isRestoringAccess={isRestoringSubscriptionAccess}
-              checkoutIntent={pendingCheckoutIntent}
               onCheckoutIntentHandled={clearPendingCheckoutIntent}
             />
           </motion.div>

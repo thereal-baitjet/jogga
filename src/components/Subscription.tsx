@@ -4,7 +4,6 @@ import { ChevronLeft, Check, Zap, CreditCard, ShieldCheck, Sparkles } from 'luci
 import { cn } from '../lib/utils';
 import {
   BILLING_PLANS,
-  CheckoutIntent,
   FREE_TRIAL_LABEL,
   STRIPE_EMERGENCY_CHECKOUT_LINKS,
 } from '../config/billing';
@@ -19,7 +18,6 @@ interface SubscriptionProps {
   onManageSubscription?: () => Promise<void>;
   onRestoreAccess?: () => Promise<boolean>;
   isRestoringAccess?: boolean;
-  checkoutIntent?: CheckoutIntent | null;
   onCheckoutIntentHandled?: () => void;
 }
 
