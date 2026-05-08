@@ -2,6 +2,8 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { SEO_PAGE_BY_PATH } from './components/seo/seoPages';
+import { SeoTrainingPage } from './components/seo/SeoTrainingPage';
 import './index.css';
 import { registerSW } from 'virtual:pwa-register';
 import { initAnalytics } from './services/analyticsService';
@@ -58,10 +60,13 @@ window.setInterval(checkForAppUpdate, 60 * 60 * 1000);
 
 initAnalytics();
 
+const normalizedPath = window.location.pathname.replace(/\/$/, '') || '/';
+const seoPage = SEO_PAGE_BY_PATH[normalizedPath];
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
-      <App />
+      {seoPage ? <SeoTrainingPage page={seoPage} /> : <App />}
     </ErrorBoundary>
   </StrictMode>,
 );

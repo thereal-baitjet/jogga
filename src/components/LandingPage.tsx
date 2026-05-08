@@ -66,6 +66,15 @@ const proofVideos = [
   },
 ];
 
+const trainingGuides = [
+  { title: 'AI Running Coach', href: '/ai-running-coach', label: 'Personalized adaptive coaching' },
+  { title: '5K Training Plan', href: '/5k-training-plan', label: 'Beginner-friendly 5K prep' },
+  { title: '10K Training Plan', href: '/10k-training-plan', label: 'Build endurance and pace' },
+  { title: 'Marathon Training Plan', href: '/marathon-training-plan', label: 'Long-run progression' },
+  { title: 'Beginner Running Plan', href: '/beginner-running-plan', label: 'Start running safely' },
+  { title: 'Half Marathon Plan', href: '/half-marathon-plan', label: 'Personalized half marathon prep' },
+];
+
 export default function LandingPage({ onStart, authError }: LandingPageProps) {
   const [loadingSource, setLoadingSource] = useState<string | null>(null);
   const [localAuthError, setLocalAuthError] = useState<string | null>(null);
@@ -161,7 +170,7 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
       </header>
 
       <main>
-        <section className="mx-auto grid min-h-[calc(100dvh-73px)] max-w-6xl items-center gap-10 px-5 py-10 lg:grid-cols-[1fr_0.82fr] lg:py-14">
+        <section id="start" className="mx-auto grid min-h-[calc(100dvh-73px)] max-w-6xl items-center gap-10 px-5 py-10 lg:grid-cols-[1fr_0.82fr] lg:py-14">
           <motion.div
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
@@ -294,6 +303,32 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
           </div>
         </section>
 
+        <section className="border-y border-zinc-800 bg-zinc-900/35">
+          <div className="mx-auto max-w-6xl px-5 py-10">
+            <div className="mb-6 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-widest text-yellow-100">Training Guides</div>
+                <h2 className="mt-2 text-3xl font-light text-zinc-50">Plans for every runner</h2>
+              </div>
+              <p className="max-w-xl text-sm leading-6 text-zinc-400">
+                Learn the basics, then start a personalized Jogga plan when you are ready to train.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {trainingGuides.map((guide) => (
+                <a
+                  key={guide.href}
+                  href={guide.href}
+                  className="rounded-lg border border-zinc-800 bg-zinc-950/70 p-5 transition hover:border-zinc-600 hover:bg-zinc-900"
+                >
+                  <div className="text-lg font-semibold text-zinc-50">{guide.title}</div>
+                  <div className="mt-2 text-sm leading-6 text-zinc-400">{guide.label}</div>
+                </a>
+              ))}
+            </div>
+          </div>
+        </section>
+
         <section className="mx-auto grid max-w-6xl gap-8 px-5 py-12 md:grid-cols-[0.9fr_1fr] md:py-16">
           <div className="space-y-4">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-yellow-100">
@@ -339,6 +374,23 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
           </div>
         </section>
       </main>
+
+      <footer className="border-t border-zinc-800 bg-zinc-950 px-5 py-8">
+        <div className="mx-auto flex max-w-6xl flex-col gap-6 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <img src="/app-icon-logo.png" alt="Jogga" className="h-9 w-9 object-contain" />
+            <span className="text-sm font-semibold text-zinc-100">Jogga</span>
+          </div>
+          <nav aria-label="Jogga marketing footer" className="grid gap-3 text-sm text-zinc-500 sm:grid-cols-2 md:flex md:flex-wrap md:justify-end">
+            <a href="/ai-running-coach" className="transition hover:text-zinc-100">AI Running Coach</a>
+            <a href="/5k-training-plan" className="transition hover:text-zinc-100">Training Plans</a>
+            <a href="/beginner-running-plan" className="transition hover:text-zinc-100">Beginner Running</a>
+            <a href="/marathon-training-plan" className="transition hover:text-zinc-100">5K / 10K / Marathon</a>
+            <a href="/#privacy" className="transition hover:text-zinc-100">Privacy</a>
+            <a href="/#terms" className="transition hover:text-zinc-100">Terms</a>
+          </nav>
+        </div>
+      </footer>
     </div>
   );
 }
