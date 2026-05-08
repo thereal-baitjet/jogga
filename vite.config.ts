@@ -45,7 +45,22 @@ export default defineConfig(() => {
           cleanupOutdatedCaches: true,
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+          navigateFallbackDenylist: [/^\/api\//, /^\/__\/auth\//, /^\/__\/firebase\//],
           runtimeCaching: [
+            {
+              urlPattern: /\/__\/auth\/.*/i,
+              handler: 'NetworkOnly',
+              options: {
+                cacheName: 'firebase-auth-network-only',
+              },
+            },
+            {
+              urlPattern: /\/__\/firebase\/.*/i,
+              handler: 'NetworkOnly',
+              options: {
+                cacheName: 'firebase-init-network-only',
+              },
+            },
             {
               urlPattern: /\/api\/.*/i,
               handler: 'NetworkOnly',
