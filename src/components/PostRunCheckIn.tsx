@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { CheckCircle2, Star, MessageSquare, ChevronRight, Activity, Zap, MapPin, Sparkles, Trophy, Info } from 'lucide-react';
 import { LiveWorkoutData, Workout, WorkoutResult } from '../types';
 import { cn } from '../lib/utils';
-import { getCachedAIResponse } from '../services/geminiService';
+import { AIServiceError, getCachedAIResponse } from '../services/geminiService';
 import { buildFeedbackReward } from '../services/feedbackRewardService';
 import { getWorkoutReadyingPreview } from '../services/marathonReadyingService';
 import { formatPace, getMeasurementLabel } from '../services/runMetricsService';
@@ -47,13 +47,36 @@ export default function PostRunCheckIn({ workout, liveData, onComplete }: PostRu
       setIsGeneratingOpinion(true);
       try {
         const prompt = buildPostRunCoachPrompt(workout, liveData);
+        const recentWorkoutSummary = [
+          workout.type,
+          workout.distanceTarget ? workout.distanceTarget.toFixed(2) : 'no-distance-target',
+          workout.durationMinutes,
+          workout.paceTarget || 'effort-based',
+          liveData.distance.toFixed(2),
+          liveData.duration,
+          formatPace(liveData.duration, liveData.distance),
+          liveData.measurementSource,
+          liveData.gpsMetrics.sampleCount,
+          Math.round(liveData.gpsMetrics.averageAccuracyMeters || 0),
+        ].join('|');
 
-        const response = await getCachedAIResponse(prompt);
+        const response = await getCachedAIResponse(prompt, 'gemini-1.5-flash', {
+          fallbackText: fallbackInsight,
+          cacheContext: {
+            questionType: 'post_run_feedback',
+            todayWorkoutId: workout.id,
+            recentWorkoutSummary,
+          },
+        });
 
         setCoachOpinion(response.text || fallbackInsight);
       } catch (err) {
         console.error("Failed to get coach opinion:", err);
-        setCoachOpinion(fallbackInsight);
+        if (err instanceof AIServiceError && (err.code === 'AI_FREE_LIMIT_REACHED' || err.code === 'AI_DAILY_LIMIT_REACHED')) {
+          setCoachOpinion(`${fallbackInsight} ${err.message}`);
+        } else {
+          setCoachOpinion(fallbackInsight);
+        }
       } finally {
         setIsGeneratingOpinion(false);
       }

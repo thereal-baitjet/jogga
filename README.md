@@ -73,7 +73,7 @@ On sign-in, Jogga creates or updates `users/{uid}` with Firebase auth metadata, 
 
 ## AI Provider Setup
 
-AI coach and audio endpoints require Firebase auth, an active Stripe subscription, and rate limits before any model request is made. The server prefers Gemini when `GEMINI_API_KEY` is configured. If Gemini is missing or returns an error and `OPENAI_API_KEY` is configured, the same endpoints fall back to OpenAI.
+AI coach endpoints require Firebase auth, enforce a 3-message lifetime free limit or 10 paid coach messages per UTC day, cache repeated coach responses for 12 hours, and return deterministic coaching text if the model provider fails. Audio endpoints still require Firebase auth, an active Stripe subscription, and rate limits before any provider request is made. The server prefers Gemini when `GEMINI_API_KEY` is configured. If Gemini is missing or returns an error and `OPENAI_API_KEY` is configured, the same endpoints fall back to OpenAI.
 
 OpenAI defaults can be overridden with:
 
@@ -82,7 +82,7 @@ OPENAI_TEXT_MODEL=gpt-4o-mini
 OPENAI_TTS_MODEL=gpt-4o-mini-tts
 ```
 
-Auth does not fall back to OpenAI. Firebase remains the identity provider and the API fails closed when auth or subscription verification does not pass.
+Auth does not fall back to OpenAI. Firebase remains the identity provider and protected APIs fail closed when auth verification does not pass.
 
 ## 💳 Stripe Setup
 

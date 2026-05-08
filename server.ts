@@ -4,6 +4,7 @@ import Stripe from "stripe";
 import dotenv from "dotenv";
 import axios from "axios";
 import { GoogleGenAI, Modality } from "@google/genai";
+import { createCoachOpinionResponse } from "./api/_utils.js";
 import { fulfillCheckoutSession, fulfillStripeWebhookEvent, fulfillSubscription } from "./api/stripe/fulfillment.js";
 import { FREE_TRIAL_DAYS, isTrialCheckout, normalizeBillingPlanId } from "./src/config/billing.js";
 
@@ -358,7 +359,11 @@ function sendApiError(res: express.Response, error: any) {
   const status = typeof error?.status === "number"
     ? error.status
     : message.includes("configured") ? 503 : 500;
-  res.status(status).json({ error: message });
+  res.status(status).json({
+    error: message,
+    ...(typeof error?.code === "string" ? { code: error.code } : {}),
+    ...(typeof error?.upgradeRequired === "boolean" ? { upgradeRequired: error.upgradeRequired } : {}),
+  });
 }
 
 async function startServer() {
@@ -395,24 +400,8 @@ async function startServer() {
   app.use(express.json());
 
   app.post("/api/coach-opinion", async (req, res) => {
-    const { prompt, model = "gemini-1.5-flash" } = req.body;
-
     try {
-      await requireAiAccess(req, {
-        feature: "coach-opinion",
-        maxRequests: 40,
-        windowMs: 24 * 60 * 60 * 1000,
-      });
-
-      if (typeof prompt !== "string" || prompt.trim().length === 0) {
-        return res.status(400).json({ error: "Prompt is required" });
-      }
-
-      if (prompt.length > 6000) {
-        return res.status(413).json({ error: "Prompt is too long" });
-      }
-
-      const response = await generateCoachText(prompt, model);
+      const response = await createCoachOpinionResponse(req, req.body);
 
       res.json(response);
     } catch (error: any) {
