@@ -26,7 +26,7 @@ import MarathonReadyingPulse from './components/MarathonReadyingPulse';
 import { AnimatePresence, motion } from 'motion/react';
 import InstallPrompt from './components/InstallPrompt';
 import { Zap } from 'lucide-react';
-import { auth, db, googleProvider } from './firebase';
+import { auth, authPersistenceReady, db, googleProvider } from './firebase';
 import {
   getRedirectResult,
   GoogleAuthProvider,
@@ -633,7 +633,8 @@ export default function App() {
   useEffect(() => {
     let isMounted = true;
 
-    getRedirectResult(auth)
+    authPersistenceReady
+      .then(() => getRedirectResult(auth))
       .then((result) => {
         if (result?.user && isMounted) {
           setAuthError(null);

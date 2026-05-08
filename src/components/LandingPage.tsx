@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { Activity, Check, ChevronRight, PlayCircle, ShieldCheck, Sparkles, Target, Zap } from 'lucide-react';
 import { signInWithRedirect } from 'firebase/auth';
-import { auth, googleProvider } from '../firebase';
+import { auth, authPersistenceReady, googleProvider } from '../firebase';
 import { BILLING_PLANS, CHECKOUT_INTENT_STORAGE_KEY, CheckoutIntent, FREE_TRIAL_LABEL, PlanId } from '../config/billing';
 import { trackEvent } from '../services/analyticsService';
 
@@ -70,6 +70,10 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
   const [loadingSource, setLoadingSource] = useState<string | null>(null);
   const [localAuthError, setLocalAuthError] = useState<string | null>(null);
 
+  const getRedirectTimeoutError = () => (
+    new Error('Google sign-in did not open. Refresh the page and try again.')
+  );
+
   const persistCheckoutIntent = (intent: CheckoutIntent) => {
     const serializedIntent = JSON.stringify(intent);
 
@@ -103,8 +107,25 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
     setLoadingSource(source);
 
     try {
+      await authPersistenceReady;
       googleProvider.setCustomParameters({ prompt: 'select_account' });
-      await signInWithRedirect(auth, googleProvider);
+
+      const redirectStarted = signInWithRedirect(auth, googleProvider).then(() => true);
+      const timedOut = new Promise<false>((resolve) => {
+        window.setTimeout(() => resolve(false), 8000);
+      });
+      const didStart = await Promise.race([redirectStarted, timedOut]);
+
+      if (!didStart) {
+        throw getRedirectTimeoutError();
+      }
+
+      window.setTimeout(() => {
+        if (document.visibilityState === 'visible') {
+          setLoadingSource(null);
+          setLocalAuthError('Google sign-in did not leave this page. Refresh and try again.');
+        }
+      }, 4000);
     } catch (error) {
       console.error('Redirect login failed', error);
       setLoadingSource(null);

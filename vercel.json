@@ -7,10 +7,6 @@
       "destination": "https://gen-lang-client-0872258010.firebaseapp.com/__/auth/:path*"
     },
     {
-      "source": "/__/firebase/:path*",
-      "destination": "https://gen-lang-client-0872258010.firebaseapp.com/__/firebase/:path*"
-    },
-    {
       "source": "/api/checkout-session/:sessionId",
       "destination": "/api/checkout-session?sessionId=:sessionId"
     },
