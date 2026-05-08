@@ -1,158 +1,165 @@
-# Jogga 🏃‍♂️
+# Jogga - AI Running Coach
 
-**Jogga** is a personalized, adaptive running coach designed to help runners of all levels achieve their goals. A powerful **Runna alternative** for less than 1/3 the price, Jogga provides the structure, motivation, and insights you need to succeed without the premium price tag.
+[![Production](https://img.shields.io/badge/production-jogga.santosautomation.com-0f172a?style=for-the-badge&logo=vercel&logoColor=white)](https://jogga.santosautomation.com)
+[![React](https://img.shields.io/badge/React-19-149eca?style=for-the-badge&logo=react&logoColor=white)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178c6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Vite](https://img.shields.io/badge/Vite-6-646cff?style=for-the-badge&logo=vite&logoColor=white)](https://vite.dev)
+[![Firebase](https://img.shields.io/badge/Firebase-Auth%20%2B%20Firestore-ffca28?style=for-the-badge&logo=firebase&logoColor=111827)](https://firebase.google.com)
+[![Stripe](https://img.shields.io/badge/Stripe-Subscriptions-635bff?style=for-the-badge&logo=stripe&logoColor=white)](https://stripe.com)
+[![License](https://img.shields.io/badge/License-Apache--2.0-blue?style=for-the-badge)](LICENSE)
 
-![Jogga Preview](https://picsum.photos/seed/running/1200/600)
+![Jogga logo](public/mainLogo.png)
 
-## ✨ Features
+Jogga is a production web app for adaptive running plans, GPS-tracked workouts, subscription access, and concise AI coaching. The app is built around deterministic training logic first: plan generation, mileage progression, readiness, rest-day handling, and workout adjustments do not depend on an LLM. AI is used only where it adds value, such as post-run coaching summaries and advanced coach explanations.
 
-- **Adaptive Training Plans**: Custom plans generated based on your experience level, goals, and preferred training days.
-- **Real-Time Tracking**: GPS-powered run tracking with live distance, pace, and duration metrics.
-- **Readiness Score**: Daily insights into your recovery and performance potential based on your recent training consistency and fatigue.
-- **Interactive Workouts**: Detailed workout instructions with specific targets for pace and effort.
-- **Performance Analytics**: Track your progress over time with comprehensive post-run check-ins and history.
-- **Premium Experience**: Secure subscription management powered by Stripe to unlock advanced coaching features.
+Live app: [https://jogga.santosautomation.com](https://jogga.santosautomation.com)
 
-## 🚀 Tech Stack
+## What It Does
 
-- **Frontend**: [React](https://reactjs.org/) + [Vite](https://vitejs.dev/)
-- **Styling**: [Tailwind CSS](https://tailwindcss.com/)
-- **Animations**: [Motion](https://motion.dev/)
-- **Icons**: [Lucide React](https://lucide.dev/)
-- **Backend**: [Express](https://expressjs.com/) (Node.js)
-- **Payments**: [Stripe](https://stripe.com/)
-- **Language**: [TypeScript](https://www.typescriptlang.org/)
+- Builds personalized running plans from experience level, race goal, target date, preferred training days, and weekly mileage.
+- Tracks real runs with GPS distance, pace, duration, route samples, and measurement metadata.
+- Generates readiness and training feedback from deterministic workout history.
+- Shows post-run coaching insights grounded in measured run data.
+- Gates premium access through Stripe Checkout, Stripe Customer Portal, and verified webhooks.
+- Uses Firebase Auth for Google sign-in and Firestore for user profiles, workouts, subscription state, and AI usage controls.
+- Ships SEO landing pages for running plan searches and a PWA service worker for install/update flows.
 
-## 🛠️ Getting Started
+## Current Production Shape
 
-### Prerequisites
+| Area | Status |
+| --- | --- |
+| Frontend | React 19, Vite 6, Tailwind CSS, Motion, Lucide |
+| Backend | Vercel serverless API routes plus local Express dev server |
+| Auth | Firebase Auth with Google sign-in |
+| Database | Firestore user records and workout subcollections |
+| Payments | Stripe subscriptions, Checkout, Customer Portal, webhook fulfillment |
+| AI | Gemini preferred, OpenAI fallback, deterministic fallback if providers fail |
+| Analytics | Google Analytics 4 via `VITE_GA_MEASUREMENT_ID` |
+| SEO | Static guide pages, `sitemap.xml`, `robots.txt`, Google site verification |
+| Domain | `jogga.santosautomation.com` on Vercel |
 
-- Node.js (v18 or higher)
-- npm or yarn
+## Core Flows
 
-### Installation
+1. Landing page CTA stores checkout intent and starts Google redirect auth.
+2. New users complete onboarding before seeing the plan/paywall path.
+3. Unpaid users see the single subscription screen.
+4. Monthly, yearly, and trial options create server-side Stripe Checkout sessions.
+5. Stripe webhooks write subscription truth to Firestore with Firebase Admin.
+6. Active or trialing subscribers access the dashboard, plan, live tracking, and paid AI/audio features.
+7. Canceled or past-due subscriptions are locked again unless the user has admin access.
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/thereal-baitjet/jogga-fork.git
-   cd jogga-fork
-   ```
+## AI Cost Controls
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+Jogga is not built as an LLM wrapper. The expensive model calls are constrained:
 
-3. Set up environment variables:
-   Create a `.env` file in the root directory and add your configuration (see `.env.example` for reference):
-   ```env
-   APP_URL=https://jogga.santosautomation.com
-   STRIPE_SECRET_KEY=sk_test_...
-   STRIPE_MONTHLY_PRICE_ID=price_...
-   STRIPE_YEARLY_PRICE_ID=price_...
-   STRIPE_WEBHOOK_SECRET=whsec_...
-   GEMINI_API_KEY=...
-   OPENAI_API_KEY=...
-   FIREBASE_SERVICE_ACCOUNT_JSON='{"project_id":"...","client_email":"...","private_key":"..."}'
-   ```
+- Training plans, mileage, rest days, pace guidance, readiness, missed-workout adjustment, and difficulty adjustment are deterministic.
+- `/api/coach-opinion` requires Firebase auth.
+- Free users receive 3 lifetime AI coach messages.
+- Paid or trialing users receive 10 AI coach messages per UTC day.
+- AI coach responses are capped at 180 words.
+- Repeated coach responses are cached for 12 hours using the user ID, question type, readiness score, workout ID, and recent workout summary.
+- If Gemini and OpenAI are unavailable, the API returns deterministic coaching text instead of breaking the app.
+- `/api/audio-cue` remains subscription-gated and rate-limited.
 
-4. Start the development server:
-   ```bash
-   npm run dev
-   ```
-
-5. Build for production:
-   ```bash
-   npm run build
-   npm start
-   ```
-
-## Firestore User Records
-
-On sign-in, Jogga creates or updates `users/{uid}` with Firebase auth metadata, including `uid`, `email`, `displayName`, `photoURL`, `authProvider`, `createdAt`, and `lastLoginAt`. Onboarding then merges training profile fields into the same document with `profileCompleted: true`. Stripe subscription fields are fulfilled server-side through Firebase Admin from verified Stripe webhook and session/status API data. Firestore rules allow users to read/write only their own user document and workout subcollection.
-
-## AI Provider Setup
-
-AI coach endpoints require Firebase auth, enforce a 3-message lifetime free limit or 10 paid coach messages per UTC day, cache repeated coach responses for 12 hours, and return deterministic coaching text if the model provider fails. Audio endpoints still require Firebase auth, an active Stripe subscription, and rate limits before any provider request is made. The server prefers Gemini when `GEMINI_API_KEY` is configured. If Gemini is missing or returns an error and `OPENAI_API_KEY` is configured, the same endpoints fall back to OpenAI.
-
-OpenAI defaults can be overridden with:
-
-```env
-OPENAI_TEXT_MODEL=gpt-4o-mini
-OPENAI_TTS_MODEL=gpt-4o-mini-tts
-```
-
-Auth does not fall back to OpenAI. Firebase remains the identity provider and protected APIs fail closed when auth verification does not pass.
-
-## 💳 Stripe Setup
-
-Jogga uses server-created Stripe Checkout Sessions for subscriptions. Create two recurring Prices in Stripe, add their IDs to `STRIPE_MONTHLY_PRICE_ID` and `STRIPE_YEARLY_PRICE_ID`, then set `STRIPE_SECRET_KEY`.
-
-Hosted Stripe Payment Links are intentionally not used in the app. The subscription buttons call `/api/create-checkout-session`, and Stripe Checkout returns to `APP_URL` on `jogga.santosautomation.com` after payment.
-
-Current Stripe objects created for Jogga:
+## Repository Layout
 
 ```text
-Product: prod_UPX71y7IL8bHR3
-Monthly price: price_1TQi3jDyN7ZsSI75hfTKOr0s
-Yearly price: price_1TQi3nDyN7ZsSI75Pzra5Cpt
+api/                         Vercel API routes
+api/stripe/                  Stripe webhook fulfillment
+scripts/                     Build-time SEO and smoke checks
+src/components/              Main app screens and UI components
+src/components/seo/          SEO landing page definitions and layout
+src/config/                  Billing config and checkout intent constants
+src/services/                Plan, readiness, AI, analytics, GPS, OAuth services
+public/                      Logo, media, sitemap, robots, verification files
+firestore.rules              Firestore security rules
+server.ts                    Local Express dev server
+vercel.json                  Production routing and function config
 ```
 
-Checkout redirects back with a Stripe Session ID. The app verifies that session through `/api/checkout-session/:sessionId` before updating local access state, so a user cannot unlock premium access by typing a fake success URL. Permanent subscription fields are written server-side with Firebase Admin credentials, not by the React client.
+## Local Setup
 
-Subscribers can open Stripe Customer Portal from their profile or subscription screen to cancel a free trial, cancel a monthly/yearly plan, update payment methods, or manage billing. If the app has a stored Stripe customer ID, it creates a direct portal session through `/api/create-billing-portal-session`; otherwise it falls back to the hosted portal login URL in `VITE_STRIPE_BILLING_PORTAL_URL` (https://billing.stripe.com/p/login/4gM7sL6tEfHD0P7cdw1wY00).
+Use Node 20+ for the cleanest match with Vercel.
 
-For production subscription state sync, configure a Stripe webhook endpoint at `/api/stripe/webhook`, set `STRIPE_WEBHOOK_SECRET`, and set Firebase Admin credentials with either `FIREBASE_SERVICE_ACCOUNT_JSON` or the split `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, and `FIREBASE_PRIVATE_KEY` variables. The webhook verifies the Stripe signature before fulfillment, unlocks `active` and `trialing` subscriptions, marks `past_due` as locked, and revokes canceled subscriptions unless `users/{uid}.accessSource` is `admin`.
+```bash
+git clone https://github.com/thereal-baitjet/jogga-fork.git
+cd jogga-fork
+npm install
+cp .env.example .env
+npm run dev
+```
 
-## PWA Update Flow
+The dev server runs from `server.ts`. The production build uses Vite and the Vercel API route files.
 
-Jogga registers a service worker through `vite-plugin-pwa`. When a new build is available, the app shows an "Update App" button that activates the new service worker and reloads the app. The app also checks for updates when the window regains focus, when visibility returns, and once per hour while open.
+```bash
+npm run lint
+npm run test:core
+npm run build
+```
 
-## 🌐 Custom Domain
+## Environment Variables
 
-Production is deployed on Vercel:
+Do not commit real secrets. Use `.env` locally and Vercel Environment Variables in production.
+
+| Variable | Purpose |
+| --- | --- |
+| `APP_URL` | Public app URL used for Stripe redirects, OAuth callbacks, and self-referential links |
+| `STRIPE_SECRET_KEY` | Server-only Stripe API key |
+| `STRIPE_MONTHLY_PRICE_ID` | Stripe recurring monthly price |
+| `STRIPE_YEARLY_PRICE_ID` | Stripe recurring yearly price |
+| `STRIPE_WEBHOOK_SECRET` | Stripe webhook signature secret |
+| `VITE_STRIPE_BILLING_PORTAL_URL` | Public fallback portal login URL |
+| `FIREBASE_WEB_API_KEY` | Firebase Auth REST verification key |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | Preferred server-only Firebase Admin credential |
+| `FIREBASE_PROJECT_ID` | Split Firebase Admin credential fallback |
+| `FIREBASE_CLIENT_EMAIL` | Split Firebase Admin credential fallback |
+| `FIREBASE_PRIVATE_KEY` | Split Firebase Admin credential fallback |
+| `GEMINI_API_KEY` | Preferred AI provider key |
+| `OPENAI_API_KEY` | AI fallback provider key |
+| `OPENAI_TEXT_MODEL` | Optional OpenAI text model override |
+| `OPENAI_TTS_MODEL` | Optional OpenAI audio model override |
+| `VITE_GOOGLE_MAPS_API_KEY` | Optional browser key for route map images |
+| `VITE_GA_MEASUREMENT_ID` | GA4 measurement ID |
+| `VITE_GOOGLE_OAUTH_CLIENT_ID` | Cordova Google OAuth web client ID |
+| `VITE_CORDOVA_GOOGLE_REDIRECT_URI` | Cordova OAuth callback URL |
+| `GOOGLE_CLIENT_ID` | Optional server-side Google Health fallback |
+| `GOOGLE_CLIENT_SECRET` | Optional server-side Google Health fallback |
+
+## Stripe Setup
+
+Jogga uses server-created Stripe Checkout Sessions. Hosted Stripe Payment Links are not the primary app flow.
+
+Required production setup:
+
+1. Create monthly and yearly recurring Stripe Prices.
+2. Add the price IDs to Vercel as `STRIPE_MONTHLY_PRICE_ID` and `STRIPE_YEARLY_PRICE_ID`.
+3. Set `STRIPE_SECRET_KEY`.
+4. Configure a Stripe webhook endpoint:
 
 ```text
-https://jogga-fork-main.vercel.app
+https://jogga.santosautomation.com/api/stripe/webhook
 ```
 
-The intended custom domain is:
+5. Add the webhook secret as `STRIPE_WEBHOOK_SECRET`.
+6. Set Firebase Admin credentials so webhook fulfillment can write `users/{uid}` server-side.
 
-```text
-https://jogga.santosautomation.com
-```
+Webhook fulfillment updates:
 
-Set `APP_URL=https://jogga.santosautomation.com` in the production environment before deploying. Stripe Checkout success/cancel URLs and Google Health OAuth callbacks use this value. This value is already set in the linked Vercel production environment.
+- `isUnlocked`
+- `accessSource`
+- `stripeCustomerId`
+- `stripeSubscriptionId`
+- `stripePriceId`
+- `subscriptionStatus`
+- `subscriptionPlan`
+- `subscriptionVerifiedAt`
+- `updatedAt`
 
-The domain `santosautomation.com` is currently using Namecheap DNS. Vercel has `jogga.santosautomation.com` attached to the `jogga-fork-main` project. Add this host record in Namecheap:
+Active and trialing subscriptions unlock access. Canceled and past-due subscriptions lock access unless `accessSource` is `admin`.
 
-```text
-Type: A
-Host: jogga
-Value: 76.76.21.21
-TTL: Automatic
-```
+## Firebase Setup
 
-Alternatively, move the domain's nameservers to Vercel:
-
-```text
-ns1.vercel-dns.com
-ns2.vercel-dns.com
-```
-
-Keeping Namecheap DNS and adding the `A` record is the smallest change.
-
-After DNS is active, update external service allowlists:
-
-- Firebase Auth authorized domains: `jogga-fork-main.vercel.app` and `jogga.santosautomation.com`
-- Google OAuth redirect URI: `https://jogga.santosautomation.com/auth/google-health/callback`
-- Cordova Google OAuth redirect URI: `https://jogga.santosautomation.com/oauth/google/callback`
-- Stripe webhook endpoint: `https://jogga.santosautomation.com/api/stripe/webhook`
-- Stripe Checkout success/cancel URLs are generated from `APP_URL`
-
-## Google Auth Setup
-
-Firebase Google sign-in is handled by the client app. In Firebase Console, enable Authentication > Sign-in method > Google, then add these authorized domains:
+Enable Firebase Auth with Google sign-in and add these authorized domains:
 
 ```text
 localhost
@@ -160,50 +167,91 @@ jogga-fork-main.vercel.app
 jogga.santosautomation.com
 ```
 
-The app uses popup sign-in first and falls back to redirect sign-in when popups are blocked or unsupported. If Firebase still returns `auth/unauthorized-domain`, the domain is missing from the Firebase authorized domains list.
+Firestore stores user profile documents at `users/{uid}` and workouts under `users/{uid}/workouts`. Firestore rules are scoped so users can read and write their own user document and workout subcollection.
 
-Google Health connect uses Firebase Google reauthentication with Google Fitness read scopes, so the in-app button does not require `GOOGLE_CLIENT_ID` or `GOOGLE_CLIENT_SECRET`. In Google Cloud Console for the Firebase project, enable the Fitness API and make sure the OAuth consent screen is configured for the requested Fitness scopes.
-
-For testing before Google verification, add your Google account under OAuth consent screen > Test users. The app requests these scopes:
-
-```text
-https://www.googleapis.com/auth/fitness.activity.read
-https://www.googleapis.com/auth/fitness.body.read
-https://www.googleapis.com/auth/fitness.heart_rate.read
-https://www.googleapis.com/auth/fitness.sleep.read
-```
-
-The server OAuth endpoints in `/api/auth/google-health/*` are still present as an optional fallback. Only those endpoints require `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and the redirect URI `https://jogga.santosautomation.com/auth/google-health/callback`.
-
-## Cordova OAuth Setup
-
-Cordova builds use a manual Google OAuth flow through `cordova-plugin-inappbrowser`, then pass the returned Google credential into Firebase Auth. Web/PWA builds continue using the normal Firebase popup/redirect flow.
-
-Install the Cordova browser plugin in the Cordova wrapper project:
-
-```bash
-cordova plugin add cordova-plugin-inappbrowser
-```
-
-Set these client-side build variables before building the web assets for Cordova:
+For production server writes, configure Firebase Admin with either:
 
 ```env
-VITE_GOOGLE_OAUTH_CLIENT_ID=your-google-web-client-id.apps.googleusercontent.com
+FIREBASE_SERVICE_ACCOUNT_JSON=
+```
+
+or:
+
+```env
+FIREBASE_PROJECT_ID=
+FIREBASE_CLIENT_EMAIL=
+FIREBASE_PRIVATE_KEY=
+```
+
+## Google Health And Cordova OAuth
+
+The web/PWA health connection uses Firebase Google reauthentication with Google Fitness read scopes. The optional server endpoints under `/api/auth/google-health/*` remain available as a fallback and require `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+
+Cordova builds use `cordova-plugin-inappbrowser` and the browser-safe variables:
+
+```env
+VITE_GOOGLE_OAUTH_CLIENT_ID=
 VITE_CORDOVA_GOOGLE_REDIRECT_URI=https://jogga.santosautomation.com/oauth/google/callback
 ```
 
-In Google Cloud Console, add `https://jogga.santosautomation.com/oauth/google/callback` to the authorized redirect URIs for the same OAuth web client ID. The Cordova flow requests `openid email profile` for sign-in and adds Google Fitness read scopes when connecting Health Metrics.
+Add the Cordova redirect URI to the same Google OAuth web client.
 
-## 📱 Screenshots
+## SEO Pages
 
-| Dashboard | Workout Detail | Live Tracking |
-| :---: | :---: | :---: |
-| ![Dashboard](https://picsum.photos/seed/jogga-dash/300/600) | ![Workout](https://picsum.photos/seed/jogga-workout/300/600) | ![Tracking](https://picsum.photos/seed/jogga-track/300/600) |
+Static marketing pages are generated during `npm run build`:
 
-## 📄 License
+- `/ai-running-coach`
+- `/5k-training-plan`
+- `/10k-training-plan`
+- `/half-marathon-plan`
+- `/marathon-training-plan`
+- `/beginner-running-plan`
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+The build also keeps `public/sitemap.xml`, `public/robots.txt`, OpenGraph metadata, canonical URLs, JSON-LD, and Google site verification in place.
 
----
+## Deployment
 
-Built with ❤️ for runners everywhere.
+Production deploys through Vercel.
+
+```bash
+vercel deploy --prod --force
+```
+
+Custom domain:
+
+```text
+https://jogga.santosautomation.com
+```
+
+Vercel project:
+
+```text
+jogga-fork-main
+```
+
+After changing payments, auth, domain, or webhook behavior, verify:
+
+```bash
+curl -i https://jogga.santosautomation.com/api/create-checkout-session
+curl -i -X POST https://jogga.santosautomation.com/api/coach-opinion \
+  -H 'Content-Type: application/json' \
+  --data '{"prompt":"health check"}'
+```
+
+Expected unauthenticated coach response is `401`. That confirms the API route is reachable and auth-gated.
+
+## Maintenance Checks
+
+Run these before pushing production changes:
+
+```bash
+npm run lint
+npm run test:core
+npm run build
+```
+
+The core smoke test covers deterministic plan generation, readiness, post-run fallback coaching, and render stability. It is intentionally separate from external AI, Stripe, and Firebase network calls.
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE).
