@@ -35,6 +35,20 @@ async function readCheckoutJson(response: Response) {
   return response.json() as Promise<{ url?: string; error?: string }>;
 }
 
+function buildHostedCheckoutUrl(plan: BillingPlan, userEmail?: string | null) {
+  if (!plan.checkoutUrl) return null;
+
+  try {
+    const url = new URL(plan.checkoutUrl);
+    if (userEmail && userEmail.includes('@')) {
+      url.searchParams.set('prefilled_email', userEmail);
+    }
+    return url.toString();
+  } catch {
+    return plan.checkoutUrl;
+  }
+}
+
 export default function Subscription({
   onBack,
   isUnlocked,
@@ -110,6 +124,19 @@ export default function Subscription({
       trial,
     });
 
+    const hostedCheckoutUrl = buildHostedCheckoutUrl(plan, userEmail);
+
+    if (hostedCheckoutUrl) {
+      trackEvent('checkout_redirect', {
+        plan_id: plan.id,
+        trial,
+        mode: 'hosted_payment_link',
+      });
+      onCheckoutIntentHandled?.();
+      window.location.assign(hostedCheckoutUrl);
+      return;
+    }
+
     try {
       const response = await fetch('/api/create-checkout-session', {
         method: 'POST',
@@ -134,6 +161,7 @@ export default function Subscription({
         trackEvent('checkout_redirect', {
           plan_id: plan.id,
           trial,
+          mode: 'api_checkout_session',
         });
         onCheckoutIntentHandled?.();
         window.location.href = session.url;
@@ -147,7 +175,6 @@ export default function Subscription({
         trial,
       });
       setError(err instanceof Error ? err.message : 'Unable to start checkout.');
-    } finally {
       setLoading(null);
     }
   };
@@ -168,7 +195,6 @@ export default function Subscription({
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col max-w-md mx-auto w-full p-8">
-      {/* Header */}
       <div className="flex items-center justify-between mb-12">
         {!isUnlocked ? (
           <div className="w-10" />
