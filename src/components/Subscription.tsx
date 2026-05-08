@@ -7,7 +7,6 @@ import {
   CheckoutIntent,
   FREE_TRIAL_LABEL,
   STRIPE_EMERGENCY_CHECKOUT_LINKS,
-  normalizeBillingPlanId,
 } from '../config/billing';
 import { trackEvent } from '../services/analyticsService';
 
@@ -65,14 +64,12 @@ export default function Subscription({
   onManageSubscription,
   onRestoreAccess,
   isRestoringAccess,
-  checkoutIntent,
   onCheckoutIntentHandled,
 }: SubscriptionProps) {
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isManagingBilling, setIsManagingBilling] = useState(false);
   const autoRestoreUserRef = useRef<string | null>(null);
-  const autoCheckoutKeyRef = useRef<string | null>(null);
   const plans = BILLING_PLANS;
 
   const handleRestoreAccess = async (silent = false) => {
@@ -160,20 +157,6 @@ export default function Subscription({
     }
   };
 
-  useEffect(() => {
-    if (!checkoutIntent || !userId || isUnlocked || loading) return;
-
-    const billingPlanId = normalizeBillingPlanId(checkoutIntent.planId);
-    const plan = plans.find((candidate) => candidate.id === billingPlanId);
-    if (!plan) return;
-
-    const checkoutKey = `${userId}:${checkoutIntent.planId}:${checkoutIntent.trial ? 'trial' : 'paid'}`;
-    if (autoCheckoutKeyRef.current === checkoutKey) return;
-
-    autoCheckoutKeyRef.current = checkoutKey;
-    handleSubscribe(plan, checkoutIntent.trial);
-  }, [checkoutIntent, isUnlocked, loading, onCheckoutIntentHandled, userId]);
-
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col max-w-md mx-auto w-full p-8">
       <div className="flex items-center justify-between mb-12">
@@ -195,7 +178,7 @@ export default function Subscription({
           </div>
           <h2 className="text-3xl font-light tracking-tight">Unlock Jogga</h2>
           <p className="text-zinc-500 text-sm leading-relaxed max-w-[280px] mx-auto">
-            Choose a plan to unlock your personalized training journey. Checkout opens securely on Stripe.
+            Choose one plan below. Checkout opens securely on Stripe.
           </p>
         </div>
 
@@ -349,7 +332,7 @@ export default function Subscription({
           Subscriptions will automatically renew unless canceled at least 24 hours before the end of the current period.
         </p>
         <div className="text-[8px] text-zinc-800 uppercase tracking-[0.2em]">
-          Build v1.0.5-production-paywall
+          Build v1.0.6-single-paywall
         </div>
       </div>
     </div>
