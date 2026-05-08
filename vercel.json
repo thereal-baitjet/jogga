@@ -15,6 +15,10 @@
       "destination": "/api/checkout-session?sessionId=:sessionId"
     },
     {
+      "source": "/api/:path*",
+      "destination": "/api/:path*"
+    },
+    {
       "source": "/auth/google-health/callback",
       "destination": "/api/auth/google-health/callback"
     },
@@ -23,7 +27,7 @@
       "destination": "/api/auth/google-health/callback"
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!api(?:/|$)).*)",
       "destination": "/index.html"
     }
   ]

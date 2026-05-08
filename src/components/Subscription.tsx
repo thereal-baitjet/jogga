@@ -20,6 +20,21 @@ interface SubscriptionProps {
 
 type BillingPlan = typeof BILLING_PLANS[number];
 
+async function readCheckoutJson(response: Response) {
+  const contentType = response.headers.get('content-type') || '';
+
+  if (!contentType.toLowerCase().includes('application/json')) {
+    const responseText = await response.text();
+    console.error('Checkout API returned non-JSON response', {
+      status: response.status,
+      preview: responseText.slice(0, 200),
+    });
+    throw new Error('Checkout API is not reachable. Check deployment routing.');
+  }
+
+  return response.json() as Promise<{ url?: string; error?: string }>;
+}
+
 export default function Subscription({
   onBack,
   isUnlocked,
@@ -82,6 +97,10 @@ export default function Subscription({
       return;
     }
 
+    if (loading) {
+      return;
+    }
+
     setError(null);
     setLoading(trial ? 'trial' : plan.id);
     trackEvent('begin_checkout', {
@@ -105,7 +124,7 @@ export default function Subscription({
         }),
       });
 
-      const session = await response.json();
+      const session = await readCheckoutJson(response);
 
       if (!response.ok) {
         throw new Error(session.error || 'Unable to start secure checkout.');
@@ -154,7 +173,7 @@ export default function Subscription({
         {!isUnlocked ? (
           <div className="w-10" />
         ) : (
-          <button onClick={onBack} className="p-2 hover:bg-zinc-900 rounded-full transition-colors">
+          <button type="button" onClick={onBack} className="p-2 hover:bg-zinc-900 rounded-full transition-colors">
             <ChevronLeft size={24} />
           </button>
         )}
@@ -181,6 +200,7 @@ export default function Subscription({
 
         {isUnlocked && onManageSubscription && (
           <button
+            type="button"
             onClick={handleManageBilling}
             disabled={isManagingBilling}
             className="w-full bg-zinc-100 text-zinc-900 rounded-3xl p-4 font-bold text-sm hover:bg-white transition-all shadow-xl shadow-zinc-100/10 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -198,6 +218,7 @@ export default function Subscription({
 
         {!isUnlocked && onRestoreAccess && (
           <button
+            type="button"
             onClick={() => handleRestoreAccess(false)}
             disabled={isRestoringAccess}
             className="w-full bg-zinc-900 border border-zinc-800 text-zinc-100 rounded-3xl p-4 font-bold text-sm hover:bg-zinc-800 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-wait"
@@ -218,16 +239,23 @@ export default function Subscription({
 
         <div className="space-y-4">
           {plans.map((plan) => (
-            <motion.div
+            <motion.button
               key={plan.id}
+              type="button"
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
+              disabled={!!loading || isUnlocked}
               className={cn(
-                "relative bg-zinc-900 rounded-3xl p-6 border transition-all cursor-pointer",
+                "relative w-full bg-zinc-900 rounded-3xl p-6 border transition-all text-left",
                 plan.popular ? "border-zinc-100/30 shadow-[0_0_20px_rgba(255,255,255,0.05)]" : "border-zinc-800",
-                isUnlocked && "opacity-50 cursor-not-allowed"
+                isUnlocked || loading ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
               )}
-              onClick={() => !isUnlocked && handleSubscribe(plan)}
+              onClick={(event) => {
+                event.preventDefault();
+                if (!isUnlocked && !loading) {
+                  void handleSubscribe(plan);
+                }
+              }}
             >
               {plan.popular && (
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-zinc-100 text-zinc-950 text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full">
@@ -277,13 +305,17 @@ export default function Subscription({
                   </>
                 )}
               </div>
-            </motion.div>
+            </motion.button>
           ))}
         </div>
 
         <div className="space-y-4 pt-4">
           <button
-            onClick={() => handleSubscribe(plans[0], true)}
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              void handleSubscribe(plans[0], true);
+            }}
             disabled={!!loading || isUnlocked}
             className="w-full py-4 rounded-3xl bg-zinc-100 text-zinc-900 font-bold text-sm hover:bg-white transition-all shadow-xl shadow-zinc-100/10 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >

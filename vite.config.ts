@@ -47,6 +47,13 @@ export default defineConfig(() => {
           globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
           runtimeCaching: [
             {
+              urlPattern: /\/api\/.*/i,
+              handler: 'NetworkOnly',
+              options: {
+                cacheName: 'api-network-only',
+              },
+            },
+            {
               urlPattern: /^https:\/\/firestore\.googleapis\.com\/.*/i,
               handler: 'NetworkFirst',
               options: {
@@ -60,31 +67,6 @@ export default defineConfig(() => {
                 },
               },
             },
-            {
-              urlPattern: /\/api\/(health\/sync|create-checkout-session)/i,
-              handler: 'NetworkFirst',
-              options: {
-                cacheName: 'critical-api-cache',
-                expiration: {
-                  maxEntries: 20,
-                  maxAgeSeconds: 60 * 60 * 24, // 24 hours
-                },
-                cacheableResponse: {
-                  statuses: [0, 200],
-                },
-              },
-            },
-            {
-              urlPattern: /^\/api\/.*/i,
-              handler: 'NetworkFirst',
-              options: {
-                cacheName: 'api-cache',
-                expiration: {
-                  maxEntries: 10,
-                  maxAgeSeconds: 60 * 60 * 24, // 24 hours
-                },
-              },
-            }
           ]
         }
       })
