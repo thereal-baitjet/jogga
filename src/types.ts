@@ -38,6 +38,7 @@ export interface UserProfile {
   subscriptionStatus?: string | null;
   subscriptionPlan?: 'monthly' | 'yearly' | string | null;
   subscriptionVerifiedAt?: string | null;
+  accessSource?: 'stripe' | 'admin' | string | null;
 }
 
 export interface Workout {

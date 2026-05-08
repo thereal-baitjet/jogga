@@ -1,5 +1,6 @@
 import Stripe from "stripe";
 import { checkoutSessionAllowsAccess, getStripe, getStripeId, getSubscriptionStatus, sendError, sendJson } from "./_utils.js";
+import { fulfillCheckoutSession } from "./stripe/fulfillment.js";
 
 export default async function handler(req: any, res: any) {
   if (req.method !== "GET") {
@@ -26,9 +27,24 @@ export default async function handler(req: any, res: any) {
 
     const subscriptionStatus = getSubscriptionStatus(session.subscription as Stripe.Subscription | null);
     const unlocked = checkoutSessionAllowsAccess(session, subscriptionStatus);
+    let serverFulfilled = false;
+
+    if (unlocked) {
+      try {
+        const fulfillment = await fulfillCheckoutSession(stripe, session, "checkout.session.verified");
+        serverFulfilled = fulfillment.handled;
+      } catch (fulfillmentError) {
+        console.error("Checkout session server fulfillment failed:", {
+          sessionId,
+          userId: sessionUserId,
+          message: fulfillmentError instanceof Error ? fulfillmentError.message : String(fulfillmentError),
+        });
+      }
+    }
 
     return sendJson(res, 200, {
       unlocked,
+      serverFulfilled,
       status: session.status,
       paymentStatus: session.payment_status,
       customerId: getStripeId(session.customer),

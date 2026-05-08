@@ -1,5 +1,6 @@
 import Stripe from "stripe";
 import { getStripe, getStripeId, isAccessSubscriptionStatus, sendError, sendJson } from "./_utils.js";
+import { fulfillSubscription } from "./stripe/fulfillment.js";
 
 function escapeStripeSearchValue(value: string) {
   return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
@@ -40,9 +41,27 @@ export default async function handler(req: any, res: any) {
       ? "canceling"
       : subscription?.status || null;
     const unlocked = isAccessSubscriptionStatus(subscriptionStatus);
+    let serverFulfilled = false;
+
+    if (subscription) {
+      try {
+        const fulfillment = await fulfillSubscription(subscription, "subscription.status.verified", {
+          statusOverride: subscriptionStatus,
+          forceUnlocked: unlocked,
+        });
+        serverFulfilled = fulfillment.handled;
+      } catch (fulfillmentError) {
+        console.error("Subscription status server fulfillment failed:", {
+          userId,
+          subscriptionId: subscription.id,
+          message: fulfillmentError instanceof Error ? fulfillmentError.message : String(fulfillmentError),
+        });
+      }
+    }
 
     return sendJson(res, 200, {
       unlocked,
+      serverFulfilled,
       customerId: getStripeId(subscription?.customer as Stripe.Customer | string | null | undefined),
       subscriptionId: subscription?.id || null,
       subscriptionStatus,

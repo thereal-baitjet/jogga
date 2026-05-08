@@ -142,6 +142,7 @@ interface FirestoreErrorInfo {
 
 interface SubscriptionAccessResponse {
   unlocked?: boolean;
+  serverFulfilled?: boolean;
   customerId?: string | null;
   subscriptionId?: string | null;
   subscriptionStatus?: string | null;
@@ -360,8 +361,6 @@ export default function App() {
       subscriptionVerifiedAt: now,
       updatedAt: now,
     };
-
-    await setDoc(doc(db, 'users', user.uid), subscriptionUpdate, { merge: true });
 
     const mergedRecord = { ...userRecord, ...profile, ...subscriptionUpdate };
     setIsUnlocked(true);
@@ -1131,8 +1130,6 @@ export default function App() {
             subscriptionVerifiedAt: now,
             updatedAt: now,
           };
-
-          await setDoc(doc(db, 'users', user.uid), subscriptionUpdate, { merge: true });
 
           const updatedRecord = { ...userRecord, ...profile, ...subscriptionUpdate };
           setIsUnlocked(false);

@@ -199,7 +199,9 @@ const dashboardMarkup = renderToStaticMarkup(React.createElement(Dashboard, {
   onViewHealth: noop,
 }));
 assert(
-  dashboardMarkup.includes("Today's Workout") || dashboardMarkup.includes('Next Workout'),
+  dashboardMarkup.includes("Today's Workout") ||
+    dashboardMarkup.includes('Today&#x27;s Workout') ||
+    dashboardMarkup.includes('Next Workout'),
   'dashboard should render the plan surface'
 );
 assert(dashboardMarkup.includes('Upcoming'), 'dashboard should render upcoming workouts');

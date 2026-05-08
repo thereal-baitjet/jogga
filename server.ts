@@ -4,6 +4,8 @@ import Stripe from "stripe";
 import dotenv from "dotenv";
 import axios from "axios";
 import { GoogleGenAI, Modality } from "@google/genai";
+import { fulfillCheckoutSession, fulfillStripeWebhookEvent, fulfillSubscription } from "./api/stripe/fulfillment.js";
+import { FREE_TRIAL_DAYS, isTrialCheckout, normalizeBillingPlanId } from "./src/config/billing.js";
 
 dotenv.config();
 
@@ -223,8 +225,8 @@ function getStripeId(
 }
 
 function getPriceId(planId: unknown) {
-  if (planId !== "monthly" && planId !== "yearly") return null;
-  return STRIPE_PRICE_IDS[planId] || null;
+  const billingPlanId = normalizeBillingPlanId(planId);
+  return billingPlanId ? STRIPE_PRICE_IDS[billingPlanId] || null : null;
 }
 
 function getSubscriptionStatus(subscription: string | Stripe.Subscription | null) {
@@ -363,33 +365,30 @@ async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT || 3000);
 
-  app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), (req, res) => {
+  app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+    const signature = req.headers["stripe-signature"];
+    if (!STRIPE_WEBHOOK_SECRET || typeof signature !== "string") {
+      return res.status(503).send("Stripe webhook signing is not configured");
+    }
+
+    let event: Stripe.Event;
     try {
       const stripe = getStripe();
-      const signature = req.headers["stripe-signature"];
-      if (!STRIPE_WEBHOOK_SECRET || typeof signature !== "string") {
-        return res.status(503).send("Stripe webhook signing is not configured");
-      }
-
-      const event = stripe.webhooks.constructEvent(req.body, signature, STRIPE_WEBHOOK_SECRET);
-
-      switch (event.type) {
-        case "checkout.session.completed":
-        case "customer.subscription.created":
-        case "customer.subscription.updated":
-        case "customer.subscription.deleted":
-        case "invoice.paid":
-        case "invoice.payment_failed":
-          console.info(`Stripe event received: ${event.type}`);
-          break;
-        default:
-          console.info(`Unhandled Stripe event: ${event.type}`);
-      }
-
-      res.json({ received: true });
+      event = stripe.webhooks.constructEvent(req.body, signature, STRIPE_WEBHOOK_SECRET);
     } catch (error: any) {
-      console.error("Stripe webhook error:", error.message);
-      res.status(400).send(`Webhook Error: ${error.message}`);
+      console.error("Stripe webhook signature error:", error.message);
+      return res.status(400).send(`Webhook Error: ${error.message}`);
+    }
+
+    try {
+      await fulfillStripeWebhookEvent(getStripe(), event);
+      return res.json({ received: true });
+    } catch (error: any) {
+      console.error("Stripe webhook fulfillment error:", {
+        eventType: event.type,
+        message: error.message,
+      });
+      return res.status(error.message?.includes("configured") ? 503 : 500).send("Stripe webhook fulfillment failed");
     }
   });
 
@@ -603,9 +602,11 @@ async function startServer() {
   // API routes
   app.post("/api/create-checkout-session", async (req, res) => {
     const { planId, userId, email, trial } = req.body;
+    const billingPlanId = normalizeBillingPlanId(planId);
+    const useTrial = isTrialCheckout(planId, trial);
     const priceId = getPriceId(planId);
 
-    if (!priceId) {
+    if (!billingPlanId || !priceId) {
       return res.status(400).json({ error: "Unknown or unconfigured plan" });
     }
 
@@ -619,12 +620,13 @@ async function startServer() {
       const subscriptionData: Record<string, any> = {
         metadata: {
           userId,
-          planId,
+          planId: billingPlanId,
+          checkoutPlanId: useTrial ? "trial" : billingPlanId,
         },
       };
 
-      if (trial) {
-        subscriptionData.trial_period_days = 7;
+      if (useTrial) {
+        subscriptionData.trial_period_days = FREE_TRIAL_DAYS;
         subscriptionData.trial_settings = {
           end_behavior: {
             missing_payment_method: "cancel",
@@ -645,11 +647,12 @@ async function startServer() {
         client_reference_id: userId,
         customer_email: typeof email === "string" && email.includes("@") ? email : undefined,
         allow_promotion_codes: true,
-        payment_method_collection: trial ? "if_required" : "always",
+        payment_method_collection: "always",
         metadata: {
           userId,
-          planId,
-          trial: trial ? "true" : "false",
+          planId: billingPlanId,
+          checkoutPlanId: useTrial ? "trial" : billingPlanId,
+          trial: useTrial ? "true" : "false",
         },
         subscription_data: subscriptionData,
       });
@@ -729,9 +732,24 @@ async function startServer() {
 
       const subscriptionStatus = getSubscriptionStatus(session.subscription as Stripe.Subscription | null);
       const unlocked = checkoutSessionAllowsAccess(session, subscriptionStatus);
+      let serverFulfilled = false;
+
+      if (unlocked) {
+        try {
+          const fulfillment = await fulfillCheckoutSession(stripe, session, "checkout.session.verified");
+          serverFulfilled = fulfillment.handled;
+        } catch (fulfillmentError) {
+          console.error("Checkout session server fulfillment failed:", {
+            sessionId,
+            userId: sessionUserId,
+            message: fulfillmentError instanceof Error ? fulfillmentError.message : String(fulfillmentError),
+          });
+        }
+      }
 
       res.json({
         unlocked,
+        serverFulfilled,
         status: session.status,
         paymentStatus: session.payment_status,
         customerId: getStripeId(session.customer),
@@ -773,9 +791,27 @@ async function startServer() {
         ? "canceling"
         : subscription?.status || null;
       const unlocked = isAccessSubscriptionStatus(subscriptionStatus);
+      let serverFulfilled = false;
+
+      if (subscription) {
+        try {
+          const fulfillment = await fulfillSubscription(subscription, "subscription.status.verified", {
+            statusOverride: subscriptionStatus,
+            forceUnlocked: unlocked,
+          });
+          serverFulfilled = fulfillment.handled;
+        } catch (fulfillmentError) {
+          console.error("Subscription status server fulfillment failed:", {
+            userId,
+            subscriptionId: subscription.id,
+            message: fulfillmentError instanceof Error ? fulfillmentError.message : String(fulfillmentError),
+          });
+        }
+      }
 
       res.json({
         unlocked,
+        serverFulfilled,
         customerId: getStripeId(subscription?.customer as Stripe.Customer | string | null | undefined),
         subscriptionId: subscription?.id || null,
         subscriptionStatus,

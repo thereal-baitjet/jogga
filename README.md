@@ -53,6 +53,7 @@
    STRIPE_WEBHOOK_SECRET=whsec_...
    GEMINI_API_KEY=...
    OPENAI_API_KEY=...
+   FIREBASE_SERVICE_ACCOUNT_JSON='{"project_id":"...","client_email":"...","private_key":"..."}'
    ```
 
 4. Start the development server:
@@ -68,7 +69,7 @@
 
 ## Firestore User Records
 
-On sign-in, Jogga creates or updates `users/{uid}` with Firebase auth metadata, including `uid`, `email`, `displayName`, `photoURL`, `authProvider`, `createdAt`, and `lastLoginAt`. Onboarding then merges training profile fields into the same document with `profileCompleted: true`, so subscription fields written after Stripe Checkout are preserved. Firestore rules allow users to read/write only their own user document and workout subcollection.
+On sign-in, Jogga creates or updates `users/{uid}` with Firebase auth metadata, including `uid`, `email`, `displayName`, `photoURL`, `authProvider`, `createdAt`, and `lastLoginAt`. Onboarding then merges training profile fields into the same document with `profileCompleted: true`. Stripe subscription fields are fulfilled server-side through Firebase Admin from verified Stripe webhook and session/status API data. Firestore rules allow users to read/write only their own user document and workout subcollection.
 
 ## AI Provider Setup
 
@@ -97,11 +98,11 @@ Monthly price: price_1TQi3jDyN7ZsSI75hfTKOr0s
 Yearly price: price_1TQi3nDyN7ZsSI75Pzra5Cpt
 ```
 
-Checkout redirects back with a Stripe Session ID. The app verifies that session through `/api/checkout-session/:sessionId` before unlocking the user, so a user cannot unlock premium access by typing a fake success URL.
+Checkout redirects back with a Stripe Session ID. The app verifies that session through `/api/checkout-session/:sessionId` before updating local access state, so a user cannot unlock premium access by typing a fake success URL. Permanent subscription fields are written server-side with Firebase Admin credentials, not by the React client.
 
 Subscribers can open Stripe Customer Portal from their profile or subscription screen to cancel a free trial, cancel a monthly/yearly plan, update payment methods, or manage billing. If the app has a stored Stripe customer ID, it creates a direct portal session through `/api/create-billing-portal-session`; otherwise it falls back to the hosted portal login URL in `VITE_STRIPE_BILLING_PORTAL_URL` (https://billing.stripe.com/p/login/4gM7sL6tEfHD0P7cdw1wY00).
 
-For production subscription state sync, configure a Stripe webhook endpoint at `/api/stripe/webhook` and set `STRIPE_WEBHOOK_SECRET`. The webhook route is present for Stripe event verification/logging; connect it to an admin database writer when deploying with Firebase Admin credentials.
+For production subscription state sync, configure a Stripe webhook endpoint at `/api/stripe/webhook`, set `STRIPE_WEBHOOK_SECRET`, and set Firebase Admin credentials with either `FIREBASE_SERVICE_ACCOUNT_JSON` or the split `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, and `FIREBASE_PRIVATE_KEY` variables. The webhook verifies the Stripe signature before fulfillment, unlocks `active` and `trialing` subscriptions, marks `past_due` as locked, and revokes canceled subscriptions unless `users/{uid}.accessSource` is `admin`.
 
 ## PWA Update Flow
 
