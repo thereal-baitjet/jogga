@@ -12,10 +12,9 @@ export interface CheckoutIntent {
 
 export const CHECKOUT_INTENT_STORAGE_KEY = 'jogga_checkout_intent';
 
-// Emergency hosted Stripe checkout links.
-// These keep demo-day checkout working even if the Vercel API route or env vars are misconfigured.
-// The API checkout flow is still preferred because it attaches user metadata for automatic unlock.
-export const STRIPE_FALLBACK_CHECKOUT_LINKS: Record<BillingPlanId, string> = {
+// Hosted Stripe links are kept only as an explicit emergency fallback.
+// Production checkout must use /api/create-checkout-session so Stripe receives app user metadata.
+export const STRIPE_EMERGENCY_CHECKOUT_LINKS: Record<BillingPlanId, string> = {
   monthly: 'https://buy.stripe.com/5kQ7sL8BM6738hz5P81wY0b',
   yearly: 'https://buy.stripe.com/3cI5kD19k8fb0P7a5o1wY0c',
 };
@@ -27,7 +26,6 @@ export const BILLING_PLANS = [
     price: '$5.99',
     period: 'per month',
     shortPeriod: 'Monthly',
-    checkoutUrl: STRIPE_FALLBACK_CHECKOUT_LINKS.monthly,
     description: 'Unlock full access to all features.',
     features: [
       'Personalized training plans',
@@ -44,7 +42,6 @@ export const BILLING_PLANS = [
     price: '$34.99',
     period: 'per year',
     shortPeriod: 'Annual',
-    checkoutUrl: STRIPE_FALLBACK_CHECKOUT_LINKS.yearly,
     description: 'Best value for long-term training.',
     features: [
       'Everything in Monthly',
