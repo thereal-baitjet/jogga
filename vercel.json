@@ -11,6 +11,54 @@
       "destination": "/api/checkout-session?sessionId=:sessionId"
     },
     {
+      "source": "/ai-running-coach",
+      "destination": "/ai-running-coach/index.html"
+    },
+    {
+      "source": "/ai-running-coach/",
+      "destination": "/ai-running-coach/index.html"
+    },
+    {
+      "source": "/5k-training-plan",
+      "destination": "/5k-training-plan/index.html"
+    },
+    {
+      "source": "/5k-training-plan/",
+      "destination": "/5k-training-plan/index.html"
+    },
+    {
+      "source": "/10k-training-plan",
+      "destination": "/10k-training-plan/index.html"
+    },
+    {
+      "source": "/10k-training-plan/",
+      "destination": "/10k-training-plan/index.html"
+    },
+    {
+      "source": "/marathon-training-plan",
+      "destination": "/marathon-training-plan/index.html"
+    },
+    {
+      "source": "/marathon-training-plan/",
+      "destination": "/marathon-training-plan/index.html"
+    },
+    {
+      "source": "/beginner-running-plan",
+      "destination": "/beginner-running-plan/index.html"
+    },
+    {
+      "source": "/beginner-running-plan/",
+      "destination": "/beginner-running-plan/index.html"
+    },
+    {
+      "source": "/half-marathon-plan",
+      "destination": "/half-marathon-plan/index.html"
+    },
+    {
+      "source": "/half-marathon-plan/",
+      "destination": "/half-marathon-plan/index.html"
+    },
+    {
       "source": "/api/:path*",
       "destination": "/api/:path*"
     },
