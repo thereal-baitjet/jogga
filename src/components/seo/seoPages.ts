@@ -1,4 +1,6 @@
 export const SITE_URL = 'https://jogga.santosautomation.com';
+export const DEFAULT_META_TITLE = 'Jogga — AI Running Coach';
+export const DEFAULT_META_DESCRIPTION = 'Personalized AI running coach with adaptive training plans, GPS tracking, readiness scoring, and race preparation.';
 
 export interface SeoPageContent {
   path: string;

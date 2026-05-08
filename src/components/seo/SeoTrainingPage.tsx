@@ -1,6 +1,6 @@
 import React from 'react';
 import { ArrowRight, Check, Dumbbell, Home, Route, ShieldCheck, Sparkles } from 'lucide-react';
-import { SEO_PAGES, SeoPageContent, SITE_URL } from './seoPages';
+import { DEFAULT_META_DESCRIPTION, DEFAULT_META_TITLE, SEO_PAGES, SeoPageContent, SITE_URL } from './seoPages';
 
 function upsertMeta(selector: string, attributes: Record<string, string>) {
   let element = document.head.querySelector<HTMLMetaElement>(selector);
@@ -19,17 +19,17 @@ function useSeoMetadata(page: SeoPageContent) {
   React.useEffect(() => {
     const canonicalUrl = `${SITE_URL}${page.path}`;
 
-    document.title = page.title;
-    upsertMeta('meta[name="description"]', { name: 'description', content: page.description });
-    upsertMeta('meta[property="og:title"]', { property: 'og:title', content: page.title });
-    upsertMeta('meta[property="og:description"]', { property: 'og:description', content: page.description });
+    document.title = DEFAULT_META_TITLE;
+    upsertMeta('meta[name="description"]', { name: 'description', content: DEFAULT_META_DESCRIPTION });
+    upsertMeta('meta[property="og:title"]', { property: 'og:title', content: DEFAULT_META_TITLE });
+    upsertMeta('meta[property="og:description"]', { property: 'og:description', content: DEFAULT_META_DESCRIPTION });
     upsertMeta('meta[property="og:type"]', { property: 'og:type', content: 'website' });
     upsertMeta('meta[property="og:url"]', { property: 'og:url', content: canonicalUrl });
     upsertMeta('meta[property="og:site_name"]', { property: 'og:site_name', content: 'Jogga' });
     upsertMeta('meta[property="og:image"]', { property: 'og:image', content: `${SITE_URL}/mainLogo.png` });
     upsertMeta('meta[name="twitter:card"]', { name: 'twitter:card', content: 'summary_large_image' });
-    upsertMeta('meta[name="twitter:title"]', { name: 'twitter:title', content: page.title });
-    upsertMeta('meta[name="twitter:description"]', { name: 'twitter:description', content: page.description });
+    upsertMeta('meta[name="twitter:title"]', { name: 'twitter:title', content: DEFAULT_META_TITLE });
+    upsertMeta('meta[name="twitter:description"]', { name: 'twitter:description', content: DEFAULT_META_DESCRIPTION });
 
     let canonical = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
     if (!canonical) {
