@@ -2,7 +2,13 @@ import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { ChevronLeft, Check, Zap, CreditCard, ShieldCheck, Sparkles } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { BILLING_PLANS, CheckoutIntent, FREE_TRIAL_LABEL, normalizeBillingPlanId } from '../config/billing';
+import {
+  BILLING_PLANS,
+  CheckoutIntent,
+  FREE_TRIAL_LABEL,
+  STRIPE_EMERGENCY_CHECKOUT_LINKS,
+  normalizeBillingPlanId,
+} from '../config/billing';
 import { trackEvent } from '../services/analyticsService';
 
 interface SubscriptionProps {
@@ -20,6 +26,8 @@ interface SubscriptionProps {
 
 type BillingPlan = typeof BILLING_PLANS[number];
 
+const ENABLE_EMERGENCY_CHECKOUT_LINKS = import.meta.env.VITE_ENABLE_STRIPE_EMERGENCY_LINKS === 'true';
+
 async function readCheckoutJson(response: Response) {
   const contentType = response.headers.get('content-type') || '';
 
@@ -29,23 +37,24 @@ async function readCheckoutJson(response: Response) {
       status: response.status,
       preview: responseText.slice(0, 200),
     });
-    throw new Error('Checkout API is not reachable. Check deployment routing.');
+    throw new Error('Checkout API is not reachable. Check Vercel API routing and environment variables.');
   }
 
   return response.json() as Promise<{ url?: string; error?: string }>;
 }
 
-function buildHostedCheckoutUrl(plan: BillingPlan, userEmail?: string | null) {
-  if (!plan.checkoutUrl) return null;
+function buildEmergencyCheckoutUrl(plan: BillingPlan, userEmail?: string | null) {
+  const fallbackUrl = STRIPE_EMERGENCY_CHECKOUT_LINKS[plan.id];
+  if (!fallbackUrl) return null;
 
   try {
-    const url = new URL(plan.checkoutUrl);
+    const url = new URL(fallbackUrl);
     if (userEmail && userEmail.includes('@')) {
       url.searchParams.set('prefilled_email', userEmail);
     }
     return url.toString();
   } catch {
-    return plan.checkoutUrl;
+    return fallbackUrl;
   }
 }
 
@@ -100,6 +109,22 @@ export default function Subscription({
     }
   };
 
+  const redirectToEmergencyCheckout = (plan: BillingPlan, trial: boolean) => {
+    if (!ENABLE_EMERGENCY_CHECKOUT_LINKS) return false;
+
+    const fallbackUrl = buildEmergencyCheckoutUrl(plan, userEmail);
+    if (!fallbackUrl) return false;
+
+    trackEvent('checkout_redirect', {
+      plan_id: plan.id,
+      trial,
+      mode: 'emergency_payment_link',
+    });
+    onCheckoutIntentHandled?.();
+    window.location.assign(fallbackUrl);
+    return true;
+  };
+
   const handleSubscribe = async (plan: BillingPlan, trial = false) => {
     if (isUnlocked) {
       onBack();
@@ -124,25 +149,14 @@ export default function Subscription({
       trial,
     });
 
-    const hostedCheckoutUrl = buildHostedCheckoutUrl(plan, userEmail);
-
-    if (hostedCheckoutUrl) {
-      trackEvent('checkout_redirect', {
-        plan_id: plan.id,
-        trial,
-        mode: 'hosted_payment_link',
-      });
-      onCheckoutIntentHandled?.();
-      window.location.assign(hostedCheckoutUrl);
-      return;
-    }
-
     try {
       const response = await fetch('/api/create-checkout-session', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
         },
+        cache: 'no-store',
         body: JSON.stringify({
           planId: trial ? 'trial' : plan.id,
           userId,
@@ -164,7 +178,7 @@ export default function Subscription({
           mode: 'api_checkout_session',
         });
         onCheckoutIntentHandled?.();
-        window.location.href = session.url;
+        window.location.assign(session.url);
       } else {
         throw new Error('Stripe did not return a checkout URL.');
       }
@@ -174,6 +188,11 @@ export default function Subscription({
         plan_id: plan.id,
         trial,
       });
+
+      if (redirectToEmergencyCheckout(plan, trial)) {
+        return;
+      }
+
       setError(err instanceof Error ? err.message : 'Unable to start checkout.');
       setLoading(null);
     }
