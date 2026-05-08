@@ -1,6 +1,4 @@
-import { GoogleGenAI, Modality } from "@google/genai";
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+import { auth } from '../firebase';
 
 let audioQueue: string[] = [];
 let isPlaying = false;
@@ -22,20 +20,26 @@ async function processQueue(voice: string) {
   const text = audioQueue.shift()!;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text }] }],
-      config: {
-        responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: voice as any },
-          },
-        },
+    const token = await auth.currentUser?.getIdToken();
+    if (!token) {
+      throw new Error('Sign in before using AI audio cues.');
+    }
+
+    const response = await fetch('/api/audio-cue', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
       },
+      body: JSON.stringify({ text, voice }),
     });
 
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to generate audio cue');
+    }
+
+    const base64Audio = data.audio;
     if (base64Audio) {
       const audioData = atob(base64Audio);
       const length = audioData.length;
@@ -72,10 +76,23 @@ async function processQueue(voice: string) {
 
       source.start();
     } else {
-      processQueue(voice);
+      playSpeechSynthesisFallback(text, () => processQueue(voice));
     }
   } catch (error) {
     console.error("Failed to play audio cue:", error);
-    processQueue(voice);
+    playSpeechSynthesisFallback(text, () => processQueue(voice));
   }
+}
+
+function playSpeechSynthesisFallback(text: string, onDone: () => void) {
+  if (!('speechSynthesis' in window)) {
+    onDone();
+    return;
+  }
+
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = 0.95;
+  utterance.onend = onDone;
+  utterance.onerror = onDone;
+  window.speechSynthesis.speak(utterance);
 }

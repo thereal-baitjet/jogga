@@ -10,8 +10,15 @@ service cloud.firestore {
     // Fields:
     //   - id: string (required) - Internal ID
     //   - uid: string (required) - Firebase Auth UID
-    //   - name: string (optional) - User's name
+    //   - name: string (optional) - User's profile name
     //   - email: string (required) - User's email
+    //   - displayName: string (optional) - Firebase display name
+    //   - photoURL: string (optional) - Firebase photo URL
+    //   - authProvider: string (optional) - Firebase provider ID
+    //   - profileCompleted: bool (optional) - Whether onboarding profile is complete
+    //   - createdAt: string (optional) - First user document creation timestamp
+    //   - updatedAt: string (optional) - Last profile/user update timestamp
+    //   - lastLoginAt: string (optional) - Last auth bootstrap timestamp
     //   - goalType: string (optional) - 5k, 10k, etc.
     //   - goalDate: string (optional) - Target date
     //   - experienceLevel: string (optional) - beginner, intermediate, advanced
@@ -19,6 +26,12 @@ service cloud.firestore {
     //   - weeklyMileagePreference: number (optional) - Target mileage
     //   - isUnlocked: bool (optional) - Subscription status
     //   - readinessScore: map (optional) - User's readiness metrics
+    //   - stripeCustomerId: string (optional) - Stripe Customer ID
+    //   - stripeSubscriptionId: string (optional) - Stripe Subscription ID
+    //   - stripePriceId: string (optional) - Stripe Price ID
+    //   - subscriptionStatus: string (optional) - active, trialing, canceled, etc.
+    //   - subscriptionPlan: string (optional) - monthly, yearly
+    //   - subscriptionVerifiedAt: string (optional) - Last verified checkout timestamp
     //   - role: string (optional) - user, admin
     //
     // Collection: users/{uid}/workouts
@@ -33,7 +46,7 @@ service cloud.firestore {
     //   - paceTarget: string (optional)
     //   - effortTarget: number (optional)
     //   - instructions: string (optional)
-    //   - status: string (required) - planned, completed
+    //   - status: string (required) - planned, completed, missed
     //   - result: map (optional) - Completion details
     //
     // ===============================================================
@@ -62,28 +75,117 @@ service cloud.firestore {
       return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
     }
 
-    function hasOnlyAllowedFields(fields) {
-      return request.resource.data.keys().hasOnly(fields);
+    function hasOnlyAllowedFields(data, fields) {
+      return data.keys().hasOnly(fields);
+    }
+
+    function missingOrString(data, field, maxLength) {
+      return !data.keys().hasAny([field]) ||
+        data[field] == null ||
+        (data[field] is string && data[field].size() < maxLength);
+    }
+
+    function missingOrBool(data, field) {
+      return !data.keys().hasAny([field]) || data[field] == null || data[field] is bool;
+    }
+
+    function missingOrNumber(data, field) {
+      return !data.keys().hasAny([field]) || data[field] == null || data[field] is number;
+    }
+
+    function missingOrList(data, field) {
+      return !data.keys().hasAny([field]) || data[field] == null || data[field] is list;
+    }
+
+    function missingOrMap(data, field) {
+      return !data.keys().hasAny([field]) || data[field] == null || data[field] is map;
     }
 
     // ===============================================================
     // Domain Validators
     // ===============================================================
 
-    function isValidUser(data) {
-      return hasOnlyAllowedFields(['id', 'uid', 'name', 'email', 'goalType', 'goalDate', 'experienceLevel', 'preferredDays', 'weeklyMileagePreference', 'isUnlocked', 'readinessScore', 'role', 'isHealthConnected', 'healthProvider']) &&
-             data.uid == request.auth.uid &&
-             data.email is string && isValidEmail(data.email) &&
-             (data.name == null || (data.name is string && data.name.size() < 100));
+    function allowedUserFields() {
+      return ['id', 'uid', 'name', 'email', 'displayName', 'photoURL', 'authProvider', 'profileCompleted', 'createdAt', 'updatedAt', 'lastLoginAt', 'goalType', 'goalDate', 'experienceLevel', 'preferredDays', 'weeklyMileagePreference', 'isUnlocked', 'readinessScore', 'role', 'isHealthConnected', 'healthProvider', 'stripeCustomerId', 'stripeSubscriptionId', 'stripePriceId', 'subscriptionStatus', 'subscriptionPlan', 'subscriptionVerifiedAt'];
     }
 
-    function isValidWorkout(data) {
-      return hasOnlyAllowedFields(['id', 'uid', 'date', 'type', 'durationMinutes', 'distanceTarget', 'paceTarget', 'effortTarget', 'instructions', 'status', 'result']) &&
-             data.uid == request.auth.uid &&
+    function allowedWorkoutFields() {
+      return ['id', 'uid', 'date', 'type', 'durationMinutes', 'distanceTarget', 'paceTarget', 'effortTarget', 'instructions', 'status', 'result'];
+    }
+
+    function hasValidUserFieldTypes(data, uid) {
+      return (!data.keys().hasAny(['id']) || data.id == uid) &&
+             (!data.keys().hasAny(['uid']) || data.uid == uid) &&
+             (!data.keys().hasAny(['email']) || data.email == null || isValidEmail(data.email)) &&
+             missingOrString(data, 'name', 100) &&
+             missingOrString(data, 'displayName', 100) &&
+             missingOrString(data, 'photoURL', 500) &&
+             missingOrString(data, 'authProvider', 100) &&
+             missingOrString(data, 'createdAt', 100) &&
+             missingOrString(data, 'updatedAt', 100) &&
+             missingOrString(data, 'lastLoginAt', 100) &&
+             missingOrString(data, 'goalType', 50) &&
+             missingOrString(data, 'goalDate', 50) &&
+             missingOrString(data, 'experienceLevel', 50) &&
+             missingOrList(data, 'preferredDays') &&
+             missingOrNumber(data, 'weeklyMileagePreference') &&
+             missingOrBool(data, 'profileCompleted') &&
+             missingOrBool(data, 'isUnlocked') &&
+             missingOrBool(data, 'isHealthConnected') &&
+             missingOrMap(data, 'readinessScore') &&
+             missingOrString(data, 'healthProvider', 50) &&
+             missingOrString(data, 'stripeCustomerId', 100) &&
+             missingOrString(data, 'stripeSubscriptionId', 100) &&
+             missingOrString(data, 'stripePriceId', 100) &&
+             missingOrString(data, 'subscriptionStatus', 50) &&
+             missingOrString(data, 'subscriptionPlan', 50) &&
+             missingOrString(data, 'subscriptionVerifiedAt', 100) &&
+             missingOrString(data, 'role', 50);
+    }
+
+    function isValidUserCreate(data, uid) {
+      return hasOnlyAllowedFields(data, allowedUserFields()) &&
+             hasValidUserFieldTypes(data, uid);
+    }
+
+    function isValidUserUpdate(uid) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedUserFields()) &&
+             hasValidUserFieldTypes(request.resource.data, uid);
+    }
+
+    function hasValidWorkoutFieldTypes(data, uid) {
+      return (!data.keys().hasAny(['uid']) || data.uid == uid) &&
              data.id is string && data.id.size() < 100 &&
              data.date is string &&
              data.type is string &&
-             data.status in ['planned', 'completed'];
+             data.status in ['planned', 'completed', 'missed'] &&
+             data.durationMinutes is number &&
+             (data.distanceTarget == null || data.distanceTarget is number) &&
+             (data.paceTarget == null || data.paceTarget is string) &&
+             (data.effortTarget == null || data.effortTarget is number) &&
+             (data.instructions == null || data.instructions is string) &&
+             (data.result == null || data.result is map);
+    }
+
+    function isValidWorkoutCreate(data, uid) {
+      return hasOnlyAllowedFields(data, allowedWorkoutFields()) &&
+             hasValidWorkoutFieldTypes(data, uid);
+    }
+
+    function isValidWorkoutUpdate(uid) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedWorkoutFields()) &&
+             hasValidWorkoutFieldTypes(request.resource.data, uid);
+    }
+
+    function canSetRoleOnCreate() {
+      return !request.resource.data.keys().hasAny(['role']) ||
+        request.resource.data.role == null ||
+        request.resource.data.role == 'user' ||
+        isAdmin();
+    }
+
+    function canChangeRoleOnUpdate() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']) || isAdmin();
     }
 
     // ===============================================================
@@ -92,13 +194,13 @@ service cloud.firestore {
 
     match /users/{uid} {
       allow read: if isOwner(uid) || isAdmin();
-      allow create: if isOwner(uid) && isValidUser(request.resource.data) && (request.resource.data.role == 'user' || request.resource.data.role == null || isAdmin());
-      allow update: if isOwner(uid) && isValidUser(request.resource.data) && (request.resource.data.role == resource.data.role || isAdmin());
+      allow create: if isOwner(uid) && isValidUserCreate(request.resource.data, uid) && canSetRoleOnCreate();
+      allow update: if isOwner(uid) && isValidUserUpdate(uid) && canChangeRoleOnUpdate();
       
       match /workouts/{workoutId} {
         allow read: if isOwner(uid) || isAdmin();
-        allow create: if isOwner(uid) && isValidWorkout(request.resource.data);
-        allow update: if isOwner(uid) && isValidWorkout(request.resource.data);
+        allow create: if isOwner(uid) && isValidWorkoutCreate(request.resource.data, uid);
+        allow update: if isOwner(uid) && isValidWorkoutUpdate(uid);
         allow delete: if isOwner(uid) || isAdmin();
       }
     }

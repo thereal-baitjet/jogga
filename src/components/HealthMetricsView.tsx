@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { ChevronLeft, Activity, TrendingUp, TrendingDown, Minus, Heart, Moon, Wind, Weight, RefreshCw, Link as LinkIcon } from 'lucide-react';
 import { HealthMetric, UserProfile } from '../types';
@@ -8,6 +8,7 @@ interface HealthMetricsViewProps {
   metrics: HealthMetric[];
   profile: UserProfile;
   onBack: () => void;
+  onConnectGoogleHealth: () => Promise<unknown>;
   onSync: () => Promise<void>;
 }
 
@@ -18,25 +19,36 @@ const iconMap: Record<string, React.ReactNode> = {
   weight: <Weight size={20} className="text-zinc-400" />,
 };
 
-export default function HealthMetricsView({ metrics, profile, onBack, onSync }: HealthMetricsViewProps) {
+export default function HealthMetricsView({ metrics, profile, onBack, onConnectGoogleHealth, onSync }: HealthMetricsViewProps) {
+  const [isConnecting, setIsConnecting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [connectionConfirmed, setConnectionConfirmed] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
+  const isConnected = profile.isHealthConnected || connectionConfirmed;
 
   const handleConnectGoogle = async () => {
+    setConnectError(null);
+    setIsConnecting(true);
+
     try {
-      const response = await fetch('/api/auth/google-health/url');
-      if (!response.ok) throw new Error('Failed to get auth URL');
-      const { url } = await response.json();
-      
-      window.open(url, 'google_health_oauth', 'width=600,height=700');
+      await onConnectGoogleHealth();
+      setConnectionConfirmed(true);
     } catch (error) {
       console.error('Error connecting Google Health:', error);
+      setConnectError(error instanceof Error ? error.message : 'Unable to connect Google Health.');
+    } finally {
+      setIsConnecting(false);
     }
   };
 
   const handleSync = async () => {
+    setConnectError(null);
     setIsSyncing(true);
     try {
       await onSync();
+    } catch (error) {
+      console.error('Health sync error:', error);
+      setConnectError(error instanceof Error ? error.message : 'Unable to sync Google Health.');
     } finally {
       setIsSyncing(false);
     }
@@ -55,11 +67,11 @@ export default function HealthMetricsView({ metrics, profile, onBack, onSync }: 
         <div className="flex-1">
           <h1 className="text-xl font-light tracking-tight">Health Metrics</h1>
           <p className="text-[10px] uppercase tracking-widest text-zinc-500">
-            {profile.isHealthConnected ? `Connected to ${profile.healthProvider}` : 'Not Connected'}
+            {isConnected ? `Connected to ${profile.healthProvider || 'google'}` : 'Not Connected'}
           </p>
         </div>
         <div className="flex gap-2">
-          {profile.isHealthConnected && (
+          {isConnected && (
             <button 
               onClick={handleSync}
               disabled={isSyncing}
@@ -79,7 +91,7 @@ export default function HealthMetricsView({ metrics, profile, onBack, onSync }: 
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6 pb-24">
         {/* Connection Banner */}
-        {!profile.isHealthConnected && (
+        {!isConnected && (
           <motion.div 
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -91,25 +103,34 @@ export default function HealthMetricsView({ metrics, profile, onBack, onSync }: 
               </div>
               <div>
                 <h3 className="text-sm font-medium">Connect Health Data</h3>
-                <p className="text-xs text-zinc-500">Sync with Apple Health or Fitbit</p>
+                <p className="text-xs text-zinc-500">Sync supported Google Health metrics</p>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3">
               <button 
                 onClick={handleConnectGoogle}
-                className="py-3 rounded-2xl bg-zinc-800 text-xs font-bold hover:bg-zinc-800 transition-colors flex items-center justify-center gap-2"
+                disabled={isConnecting}
+                className="py-3 rounded-2xl bg-zinc-800 text-xs font-bold hover:bg-zinc-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-wait"
               >
-                <img src="https://www.google.com/favicon.ico" className="w-4 h-4" alt="Google" referrerPolicy="no-referrer" />
-                Google Health
-              </button>
-              <button 
-                className="py-3 rounded-2xl bg-zinc-800 text-xs font-bold opacity-50 cursor-not-allowed"
-                title="Apple Health requires native app context"
-              >
-                Apple Health
+                {isConnecting ? (
+                  <div className="w-4 h-4 border-2 border-zinc-100 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <img src="https://www.google.com/favicon.ico" className="w-4 h-4" alt="Google" referrerPolicy="no-referrer" />
+                )}
+                {isConnecting ? 'Connecting...' : 'Google Health'}
               </button>
             </div>
+            {connectError && (
+              <p role="alert" className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs text-red-200">
+                {connectError}
+              </p>
+            )}
           </motion.div>
+        )}
+        {isConnected && connectError && (
+          <p role="alert" className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs text-red-200">
+            {connectError}
+          </p>
         )}
 
         {/* Metrics Grid */}

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ChevronRight, ChevronLeft, Target, Calendar, User, Activity, Zap, Check, MapPin, Clock, Dumbbell } from 'lucide-react';
 import { ExperienceLevel, GoalType, UserProfile } from '../types';
 import { cn } from '../lib/utils';
+import { defaultGoalDate, todayISO } from '../lib/date';
 
 interface OnboardingProps {
   onComplete: (profile: UserProfile) => void;
@@ -26,7 +27,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     name: '',
     experienceLevel: 'beginner',
     goalType: '5k',
-    goalDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    goalDate: defaultGoalDate(),
     preferredDays: [1, 2, 3, 5, 6],
     weeklyMileagePreference: 15,
   });
@@ -63,7 +64,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
           <div className="space-y-8 text-center py-12">
             <div className="w-32 h-32 mx-auto mb-8">
               <img 
-                src="/mainLogo.png" 
+                src="/app-icon-logo.png" 
                 alt="Jogga Logo" 
                 className="w-full h-full object-contain"
                 referrerPolicy="no-referrer"
@@ -156,6 +157,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
               <input
                 type="date"
                 className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-3xl p-6 text-2xl font-light focus:border-zinc-100 outline-none transition-colors appearance-none"
+                min={todayISO()}
                 value={formData.goalDate}
                 onChange={(e) => setFormData({ ...formData, goalDate: e.target.value })}
               />

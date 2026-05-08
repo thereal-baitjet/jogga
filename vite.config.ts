@@ -1,18 +1,17 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig, loadEnv} from 'vite';
+import {defineConfig} from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
-export default defineConfig(({mode}) => {
-  const env = loadEnv(mode, '.', '');
+export default defineConfig(() => {
   return {
     plugins: [
       react(), 
       tailwindcss(),
       VitePWA({
-        registerType: 'prompt',
-        includeAssets: ['mainLogo.png', 'favicon.ico', 'robots.txt', 'apple-touch-icon.png'],
+        registerType: 'autoUpdate',
+        includeAssets: ['app-icon-logo.png', 'mainLogo.png', 'favicon.ico', 'robots.txt', 'apple-touch-icon.png'],
         manifest: {
           name: 'Jogga',
           short_name: 'Jogga',
@@ -23,17 +22,17 @@ export default defineConfig(({mode}) => {
           start_url: '/',
           icons: [
             {
-              src: 'mainLogo.png',
+              src: 'app-icon-logo.png',
               sizes: '192x192',
               type: 'image/png'
             },
             {
-              src: 'mainLogo.png',
+              src: 'app-icon-logo.png',
               sizes: '512x512',
               type: 'image/png'
             },
             {
-              src: 'mainLogo.png',
+              src: 'app-icon-logo.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any maskable'
@@ -41,6 +40,10 @@ export default defineConfig(({mode}) => {
           ]
         },
         workbox: {
+          skipWaiting: true,
+          clientsClaim: true,
+          cleanupOutdatedCaches: true,
+          maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
           runtimeCaching: [
             {
@@ -86,9 +89,6 @@ export default defineConfig(({mode}) => {
         }
       })
     ],
-    define: {
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
@@ -96,8 +96,22 @@ export default defineConfig(({mode}) => {
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
+      // File watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return undefined;
+            if (id.includes('/@firebase/') || id.includes('/firebase/')) return 'firebase';
+            if (id.includes('/recharts/') || id.includes('/d3-')) return 'charts';
+            if (id.includes('/lucide-react/')) return 'icons';
+            return undefined;
+          },
+        },
+      },
+      chunkSizeWarningLimit: 1000,
     },
   };
 });

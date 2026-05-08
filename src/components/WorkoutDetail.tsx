@@ -1,8 +1,10 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { ChevronLeft, Play, Info, AlertCircle, Clock, MapPin, Gauge, CheckCircle2 } from 'lucide-react';
+import { ChevronLeft, Play, Info, AlertCircle, Clock, MapPin, Gauge, CheckCircle2, Sparkles, Zap } from 'lucide-react';
 import { Workout, WorkoutType } from '../types';
 import { cn } from '../lib/utils';
+import { getWorkoutReadyingEarned, getWorkoutReadyingPreview } from '../services/marathonReadyingService';
+import { getCompletedDistanceLabel, getCompletedDurationLabel, getMeasurementLabel } from '../services/runMetricsService';
 
 interface WorkoutDetailProps {
   workout: Workout;
@@ -24,6 +26,13 @@ const TYPE_COLORS: Record<WorkoutType, string> = {
 
 export default function WorkoutDetail({ workout, onBack, onStart }: WorkoutDetailProps) {
   const isCompleted = workout.status === 'completed';
+  const readyingPreview = getWorkoutReadyingPreview(workout);
+  const readyingEarned = getWorkoutReadyingEarned(workout);
+  const feedbackReward = workout.result?.feedbackReward;
+  const displayDuration = isCompleted ? getCompletedDurationLabel(workout) : `${workout.durationMinutes}m`;
+  const displayDistance = isCompleted ? getCompletedDistanceLabel(workout) : workout.distanceTarget ? `${workout.distanceTarget}km` : null;
+  const hasCompletedDistance = isCompleted ? true : Boolean(workout.distanceTarget);
+  const measurementLabel = isCompleted ? getMeasurementLabel(workout.result?.measurementSource) : null;
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col max-w-md mx-auto w-full relative">
@@ -62,7 +71,7 @@ export default function WorkoutDetail({ workout, onBack, onStart }: WorkoutDetai
               <div className="text-[10px] uppercase tracking-widest text-zinc-500">
                 {isCompleted ? 'Actual Duration' : 'Duration'}
               </div>
-              <div className="text-lg font-medium">{workout.durationMinutes}m</div>
+              <div className="text-lg font-medium">{displayDuration}</div>
             </div>
           </div>
           <div className="bg-zinc-900/50 rounded-2xl p-4 border border-zinc-800/50 flex items-center gap-3">
@@ -76,14 +85,14 @@ export default function WorkoutDetail({ workout, onBack, onStart }: WorkoutDetai
               </div>
             </div>
           </div>
-          {workout.distanceTarget && (
+          {hasCompletedDistance && displayDistance && (
             <div className="bg-zinc-900/50 rounded-2xl p-4 border border-zinc-800/50 flex items-center gap-3">
               <MapPin size={18} className="text-zinc-500" />
               <div>
                 <div className="text-[10px] uppercase tracking-widest text-zinc-500">
                   {isCompleted ? 'Actual Distance' : 'Distance'}
                 </div>
-                <div className="text-lg font-medium">{workout.distanceTarget}km</div>
+                <div className="text-lg font-medium">{displayDistance}</div>
               </div>
             </div>
           )}
@@ -100,7 +109,50 @@ export default function WorkoutDetail({ workout, onBack, onStart }: WorkoutDetai
               </div>
             </div>
           )}
+          {isCompleted && (
+            <div className="bg-zinc-900/50 rounded-2xl p-4 border border-zinc-800/50 flex items-center gap-3">
+              <CheckCircle2 size={18} className="text-zinc-500" />
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Source</div>
+                <div className="text-lg font-medium">{measurementLabel}</div>
+              </div>
+            </div>
+          )}
         </div>
+
+        {/* Marathon Readying */}
+        <section className="space-y-4">
+          <div className="flex items-center gap-2 text-zinc-400">
+            <Sparkles size={16} className="text-yellow-400" />
+            <h2 className="text-sm font-semibold uppercase tracking-normal">Marathon Readying</h2>
+          </div>
+          <div className="rounded-2xl border border-yellow-400/20 bg-zinc-900 p-5 space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-yellow-400 text-zinc-950">
+                  <Zap size={18} fill="currentColor" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                    {isCompleted ? 'Banked' : 'Available'}
+                  </div>
+                  <div className="truncate text-sm font-medium text-zinc-100">
+                    {isCompleted ? (feedbackReward?.rewardCue || 'Workout reward captured') : 'Finish this workout'}
+                  </div>
+                </div>
+              </div>
+              <div className="shrink-0 text-2xl font-light text-yellow-100 tabular-nums">
+                +{isCompleted ? readyingEarned : readyingPreview}
+              </div>
+            </div>
+
+            {isCompleted && feedbackReward && (
+              <div className="rounded-xl bg-zinc-950/60 p-3 text-xs leading-relaxed text-zinc-400">
+                {feedbackReward.feedbackSummary}
+              </div>
+            )}
+          </div>
+        </section>
 
         {/* Coach's Notes */}
         <section className="space-y-4">

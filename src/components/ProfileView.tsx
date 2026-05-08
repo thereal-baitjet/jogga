@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { ChevronLeft, ChevronRight, User, Save, Target, Calendar, Ruler, Weight, Activity, LogOut, Sparkles, Zap } from 'lucide-react';
-import { UserProfile } from '../types';
+import { ChevronLeft, ChevronRight, User, Save, Target, Calendar, Activity, LogOut, Sparkles, Zap, CreditCard } from 'lucide-react';
+import { MarathonReadyingProfile, UserProfile } from '../types';
 import { cn } from '../lib/utils';
+import { formatMonthYear, todayISO } from '../lib/date';
 
 interface ProfileViewProps {
   profile: UserProfile;
@@ -11,11 +12,18 @@ interface ProfileViewProps {
   onRegeneratePlan: () => void;
   onLogout: () => void;
   onInstall?: () => void;
+  onManageSubscription?: () => Promise<void>;
+  marathonReadying?: MarathonReadyingProfile;
 }
 
-export default function ProfileView({ profile, onBack, onSave, onRegeneratePlan, onLogout, onInstall }: ProfileViewProps) {
+export default function ProfileView({ profile, onBack, onSave, onRegeneratePlan, onLogout, onInstall, onManageSubscription, marathonReadying }: ProfileViewProps) {
   const [editedProfile, setEditedProfile] = useState<UserProfile>({ ...profile });
   const [isSaving, setIsSaving] = useState(false);
+  const [isManagingBilling, setIsManagingBilling] = useState(false);
+  const [billingError, setBillingError] = useState<string | null>(null);
+  const memberSince = formatMonthYear(profile.createdAt || profile.subscriptionVerifiedAt || todayISO());
+  const canManageBilling = Boolean(onManageSubscription && (profile.isUnlocked || profile.stripeCustomerId));
+  const subscriptionStatus = profile.subscriptionStatus ? profile.subscriptionStatus.replace(/_/g, ' ') : 'active';
 
   const handleSave = () => {
     setIsSaving(true);
@@ -24,6 +32,20 @@ export default function ProfileView({ profile, onBack, onSave, onRegeneratePlan,
       onSave(editedProfile);
       setIsSaving(false);
     }, 500);
+  };
+
+  const handleManageBilling = async () => {
+    if (!onManageSubscription || isManagingBilling) return;
+
+    setBillingError(null);
+    setIsManagingBilling(true);
+    try {
+      await onManageSubscription();
+    } catch (error) {
+      console.error('Billing portal error:', error);
+      setBillingError(error instanceof Error ? error.message : 'Unable to open billing settings.');
+      setIsManagingBilling(false);
+    }
   };
 
   return (
@@ -66,6 +88,40 @@ export default function ProfileView({ profile, onBack, onSave, onRegeneratePlan,
           </div>
         </div>
 
+        {marathonReadying && (
+          <section className="rounded-3xl border border-yellow-400/20 bg-zinc-900 p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-zinc-400">
+                <Sparkles size={16} className="text-yellow-400" />
+                <h2 className="text-[10px] font-bold uppercase tracking-normal">Marathon Readying</h2>
+              </div>
+              <span className="rounded-full bg-yellow-400/10 px-3 py-1 text-xs font-bold text-yellow-200">
+                Level {marathonReadying.level}
+              </span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-zinc-800">
+              <div
+                className="h-full rounded-full bg-yellow-400 transition-all duration-500"
+                style={{ width: `${marathonReadying.progressPercent}%` }}
+              />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <div className="text-sm font-medium">{marathonReadying.totalPoints}</div>
+                <div className="text-[9px] font-bold uppercase tracking-widest text-zinc-600">Total</div>
+              </div>
+              <div>
+                <div className="text-sm font-medium">{marathonReadying.usagePoints}</div>
+                <div className="text-[9px] font-bold uppercase tracking-widest text-zinc-600">Usage</div>
+              </div>
+              <div>
+                <div className="text-sm font-medium">{marathonReadying.readinessPoints}</div>
+                <div className="text-[9px] font-bold uppercase tracking-widest text-zinc-600">Readying</div>
+              </div>
+            </div>
+          </section>
+        )}
+
         {/* Training Goals */}
         <section className="space-y-4">
           <div className="flex items-center gap-2 text-zinc-500">
@@ -93,6 +149,7 @@ export default function ProfileView({ profile, onBack, onSave, onRegeneratePlan,
             <input 
               type="date"
               value={editedProfile.goalDate}
+              min={todayISO()}
               onChange={(e) => setEditedProfile({ ...editedProfile, goalDate: e.target.value })}
               className="w-full bg-transparent text-lg font-medium outline-none"
             />
@@ -195,6 +252,35 @@ export default function ProfileView({ profile, onBack, onSave, onRegeneratePlan,
             <ChevronRight size={16} className="text-zinc-700 group-hover:text-zinc-500 transition-colors" />
           </button>
 
+          {canManageBilling && (
+            <button
+              onClick={handleManageBilling}
+              disabled={isManagingBilling}
+              className="w-full bg-zinc-900/30 border border-zinc-800/50 rounded-2xl p-4 flex items-center justify-between group hover:bg-zinc-900/50 transition-all disabled:opacity-60 disabled:cursor-wait"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-500 group-hover:text-zinc-100 transition-colors shrink-0">
+                  {isManagingBilling ? (
+                    <div className="w-5 h-5 border-2 border-zinc-500 border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <CreditCard size={20} />
+                  )}
+                </div>
+                <div className="text-left min-w-0">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-100">Manage Subscription</div>
+                  <div className="text-[8px] text-zinc-500 uppercase tracking-widest truncate">Cancel trial or plan</div>
+                </div>
+              </div>
+              <ChevronRight size={16} className="text-zinc-700 group-hover:text-zinc-500 transition-colors shrink-0" />
+            </button>
+          )}
+
+          {billingError && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-[10px] leading-relaxed text-red-300">
+              {billingError}
+            </div>
+          )}
+
           {onInstall && (
             <button 
               onClick={onInstall}
@@ -229,8 +315,8 @@ export default function ProfileView({ profile, onBack, onSave, onRegeneratePlan,
 
       {/* Footer Info */}
       <div className="p-8 text-center space-y-2">
-        <p className="text-[10px] text-zinc-600 uppercase tracking-widest">Member since April 2026</p>
-        <p className="text-[10px] text-zinc-700">Jogga Subscriber</p>
+        <p className="text-[10px] text-zinc-600 uppercase tracking-widest">Member since {memberSince}</p>
+        <p className="text-[10px] text-zinc-700">Jogga Subscriber - {subscriptionStatus}</p>
       </div>
     </div>
   );

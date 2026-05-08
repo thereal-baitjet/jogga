@@ -1,121 +1,151 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { ChevronLeft, Check, Zap, CreditCard, ShieldCheck, Sparkles } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { BILLING_PLANS, CheckoutIntent, FREE_TRIAL_LABEL, normalizeBillingPlanId } from '../config/billing';
+import { trackEvent } from '../services/analyticsService';
 
 interface SubscriptionProps {
   onBack: () => void;
-  onUnlock: () => void;
   isUnlocked?: boolean;
+  userId?: string;
+  userEmail?: string | null;
+  hasBillingCustomer?: boolean;
+  onManageSubscription?: () => Promise<void>;
+  onRestoreAccess?: () => Promise<boolean>;
+  isRestoringAccess?: boolean;
+  checkoutIntent?: CheckoutIntent | null;
+  onCheckoutIntentHandled?: () => void;
 }
 
-export default function Subscription({ onBack, onUnlock, isUnlocked }: SubscriptionProps) {
+type BillingPlan = typeof BILLING_PLANS[number];
+
+export default function Subscription({
+  onBack,
+  isUnlocked,
+  userId,
+  userEmail,
+  onManageSubscription,
+  onRestoreAccess,
+  isRestoringAccess,
+  checkoutIntent,
+  onCheckoutIntentHandled,
+}: SubscriptionProps) {
   const [loading, setLoading] = useState<string | null>(null);
-  const [clickCount, setClickCount] = useState(0);
-  const [showCodeInput, setShowCodeInput] = useState(false);
-  const [accessCode, setAccessCode] = useState('');
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isManagingBilling, setIsManagingBilling] = useState(false);
+  const autoRestoreUserRef = useRef<string | null>(null);
+  const autoCheckoutKeyRef = useRef<string | null>(null);
+  const plans = BILLING_PLANS;
 
-  const handleTrialClick = () => {
-    if (isUnlocked) {
-      onBack();
-      return;
-    }
-    setShowCodeInput(true);
-  };
+  const handleRestoreAccess = async (silent = false) => {
+    if (!onRestoreAccess || isUnlocked || isRestoringAccess) return;
 
-  const handleCodeSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (accessCode.toUpperCase() === 'JOGGA2026' || accessCode.toUpperCase() === 'JOGGER2026') {
-      onUnlock();
-    } else {
-      setError(true);
-      setTimeout(() => setError(false), 2000);
+    setError(null);
+    const restored = await onRestoreAccess();
+
+    if (!restored && !silent) {
+      setError('No active trial or subscription was found for this account.');
     }
   };
 
-  const handleVersionClick = () => {
-    const newCount = clickCount + 1;
-    if (newCount >= 5) {
-      const code = prompt('Enter access code:');
-      if (code === 'JOGGA2026' || code === 'JOGGER2026') {
-        onUnlock();
-      }
-      setClickCount(0);
-    } else {
-      setClickCount(newCount);
+  useEffect(() => {
+    if (!userId || isUnlocked || !onRestoreAccess) return;
+    if (autoRestoreUserRef.current === userId) return;
+
+    autoRestoreUserRef.current = userId;
+    void handleRestoreAccess(true);
+  }, [userId, isUnlocked]);
+
+  const handleManageBilling = async () => {
+    if (!onManageSubscription || isManagingBilling) return;
+
+    setError(null);
+    setIsManagingBilling(true);
+    try {
+      await onManageSubscription();
+    } catch (err) {
+      console.error('Billing portal error:', err);
+      setError(err instanceof Error ? err.message : 'Unable to open billing settings.');
+      setIsManagingBilling(false);
     }
   };
 
-  const plans = [
-    {
-      id: 'monthly',
-      name: 'Monthly Pass',
-      price: '$5.99',
-      period: 'per month',
-      url: 'https://buy.stripe.com/aFa00j8BM52Z8hzfpI1wY01',
-      description: 'Unlock full access to all features.',
-      features: [
-        'Personalized training plans',
-        'Real-time GPS tracking',
-        'Audio coaching cues',
-        'Performance analytics',
-        'Priority support'
-      ]
-    },
-    {
-      id: 'yearly',
-      name: 'Annual Pass',
-      price: '$34.99',
-      period: 'per year',
-      url: 'https://buy.stripe.com/4gM7sL6tEfHD0P7cdw1wY00',
-      description: 'Best value for long-term training.',
-      features: [
-        'Everything in Monthly',
-        'Save over 50% compared to monthly',
-        'Early access to new features',
-        'Exclusive training content',
-        'Annual performance review'
-      ],
-      popular: true
-    }
-  ];
-
-  const handleSubscribe = async (plan: typeof plans[0]) => {
-    // If already unlocked, just go back
+  const handleSubscribe = async (plan: BillingPlan, trial = false) => {
     if (isUnlocked) {
       onBack();
       return;
     }
 
-    if ('url' in plan && plan.url) {
-      window.location.href = plan.url;
+    if (!userId) {
+      setError('Sign in before starting checkout.');
       return;
     }
 
-    setLoading(plan.id);
+    setError(null);
+    setLoading(trial ? 'trial' : plan.id);
+    trackEvent('begin_checkout', {
+      plan_id: plan.id,
+      plan_name: plan.name,
+      billing_period: plan.period,
+      trial,
+    });
+
     try {
       const response = await fetch('/api/create-checkout-session', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ priceId: plan.id }),
+        body: JSON.stringify({
+          planId: trial ? 'trial' : plan.id,
+          userId,
+          email: userEmail,
+          trial,
+        }),
       });
 
       const session = await response.json();
+
+      if (!response.ok) {
+        throw new Error(session.error || 'Unable to start secure checkout.');
+      }
       
       if (session.url) {
+        trackEvent('checkout_redirect', {
+          plan_id: plan.id,
+          trial,
+        });
+        onCheckoutIntentHandled?.();
         window.location.href = session.url;
       } else {
-        console.error('Failed to create checkout session: No URL returned');
+        throw new Error('Stripe did not return a checkout URL.');
       }
     } catch (err) {
       console.error('Subscription error:', err);
+      trackEvent('checkout_error', {
+        plan_id: plan.id,
+        trial,
+      });
+      setError(err instanceof Error ? err.message : 'Unable to start checkout.');
     } finally {
       setLoading(null);
     }
   };
+
+  useEffect(() => {
+    if (!checkoutIntent || !userId || isUnlocked || loading) return;
+
+    const billingPlanId = normalizeBillingPlanId(checkoutIntent.planId);
+    const plan = plans.find((candidate) => candidate.id === billingPlanId);
+    if (!plan) return;
+
+    const checkoutKey = `${userId}:${checkoutIntent.planId}:${checkoutIntent.trial ? 'trial' : 'paid'}`;
+    if (autoCheckoutKeyRef.current === checkoutKey) return;
+
+    autoCheckoutKeyRef.current = checkoutKey;
+    void handleSubscribe(plan, checkoutIntent.trial);
+  }, [checkoutIntent, isUnlocked, loading, onCheckoutIntentHandled, userId]);
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col max-w-md mx-auto w-full p-8">
@@ -139,9 +169,52 @@ export default function Subscription({ onBack, onUnlock, isUnlocked }: Subscript
           </div>
           <h2 className="text-3xl font-light tracking-tight">Unlock the App</h2>
           <p className="text-zinc-500 text-sm leading-relaxed max-w-[280px] mx-auto">
-            Choose a plan to unlock your personalized training journey and start running today.
+            Choose a plan to unlock your personalized training journey. Checkout is securely handled by Stripe.
           </p>
         </div>
+
+        {error && (
+          <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-xs text-red-300 text-center">
+            {error}
+          </div>
+        )}
+
+        {isUnlocked && onManageSubscription && (
+          <button
+            onClick={handleManageBilling}
+            disabled={isManagingBilling}
+            className="w-full bg-zinc-100 text-zinc-900 rounded-3xl p-4 font-bold text-sm hover:bg-white transition-all shadow-xl shadow-zinc-100/10 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isManagingBilling ? (
+              <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <>
+                <CreditCard size={18} />
+                Manage or Cancel Subscription
+              </>
+            )}
+          </button>
+        )}
+
+        {!isUnlocked && onRestoreAccess && (
+          <button
+            onClick={() => handleRestoreAccess(false)}
+            disabled={isRestoringAccess}
+            className="w-full bg-zinc-900 border border-zinc-800 text-zinc-100 rounded-3xl p-4 font-bold text-sm hover:bg-zinc-800 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-wait"
+          >
+            {isRestoringAccess ? (
+              <>
+                <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                Checking Stripe Access
+              </>
+            ) : (
+              <>
+                <ShieldCheck size={18} />
+                Restore Access
+              </>
+            )}
+          </button>
+        )}
 
         <div className="space-y-4">
           {plans.map((plan) => (
@@ -185,7 +258,7 @@ export default function Subscription({ onBack, onUnlock, isUnlocked }: Subscript
               <div
                 className={cn(
                   "w-full py-4 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-2",
-                  plan.popular 
+                plan.popular 
                     ? "bg-zinc-100 text-zinc-900 hover:bg-white" 
                     : "bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
                 )}
@@ -209,49 +282,22 @@ export default function Subscription({ onBack, onUnlock, isUnlocked }: Subscript
         </div>
 
         <div className="space-y-4 pt-4">
-          {!showCodeInput ? (
-            <button
-              onClick={handleTrialClick}
-              className="w-full py-4 rounded-3xl bg-zinc-100 text-zinc-900 font-bold text-sm hover:bg-white transition-all shadow-xl shadow-zinc-100/10 flex items-center justify-center gap-2"
-            >
-              <Sparkles size={18} />
-              Start 7-Day Free Trial
-            </button>
-          ) : (
-            <motion.form 
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              onSubmit={handleCodeSubmit}
-              className="space-y-3"
-            >
-              <input
-                type="text"
-                placeholder="Enter Access Code"
-                className={cn(
-                  "w-full bg-zinc-900 border-2 p-4 rounded-2xl text-center font-mono tracking-[0.3em] outline-none transition-all",
-                  error ? "border-red-500 text-red-500" : "border-zinc-800 focus:border-zinc-100"
-                )}
-                value={accessCode}
-                onChange={(e) => setAccessCode(e.target.value)}
-                autoFocus
-              />
-              <button
-                type="submit"
-                className="w-full py-3 rounded-2xl bg-zinc-100 text-zinc-900 font-bold text-xs hover:bg-white transition-all"
-              >
-                Verify Code
-              </button>
-              <button 
-                type="button"
-                onClick={() => setShowCodeInput(false)}
-                className="w-full text-[10px] text-zinc-600 uppercase tracking-widest hover:text-zinc-400 transition-colors"
-              >
-                Cancel
-              </button>
-            </motion.form>
-          )}
+          <button
+            onClick={() => handleSubscribe(plans[0], true)}
+            disabled={!!loading || isUnlocked}
+            className="w-full py-4 rounded-3xl bg-zinc-100 text-zinc-900 font-bold text-sm hover:bg-white transition-all shadow-xl shadow-zinc-100/10 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading === 'trial' ? (
+              <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <>
+                <Sparkles size={18} />
+                Start {FREE_TRIAL_LABEL}
+              </>
+            )}
+          </button>
           <p className="text-[10px] text-zinc-500 text-center">
-            No credit card required. Cancel anytime.
+            Trial and subscription billing are processed by Stripe. Cancel anytime.
           </p>
         </div>
 
@@ -271,12 +317,9 @@ export default function Subscription({ onBack, onUnlock, isUnlocked }: Subscript
         <p className="text-[10px] text-zinc-600 leading-relaxed">
           Subscriptions will automatically renew unless canceled at least 24 hours before the end of the current period.
         </p>
-        <button 
-          onClick={handleVersionClick}
-          className="text-[8px] text-zinc-800 uppercase tracking-[0.2em] hover:text-zinc-700 transition-colors"
-        >
+        <div className="text-[8px] text-zinc-800 uppercase tracking-[0.2em]">
           Build v1.0.4-stable
-        </button>
+        </div>
       </div>
     </div>
   );

@@ -16,6 +16,12 @@
         "weeklyMileagePreference": { "type": "number" },
         "isUnlocked": { "type": "boolean" },
         "readinessScore": { "type": "object" },
+        "stripeCustomerId": { "type": "string" },
+        "stripeSubscriptionId": { "type": "string" },
+        "stripePriceId": { "type": "string" },
+        "subscriptionStatus": { "type": "string" },
+        "subscriptionPlan": { "type": "string", "enum": ["monthly", "yearly"] },
+        "subscriptionVerifiedAt": { "type": "string" },
         "role": { "type": "string" }
       },
       "required": ["id", "uid", "email"]
@@ -34,7 +40,7 @@
         "paceTarget": { "type": "string" },
         "effortTarget": { "type": "number" },
         "instructions": { "type": "string" },
-        "status": { "type": "string", "enum": ["planned", "completed"] },
+        "status": { "type": "string", "enum": ["planned", "completed", "missed"] },
         "result": { "type": "object" }
       },
       "required": ["id", "uid", "date", "type", "status"]

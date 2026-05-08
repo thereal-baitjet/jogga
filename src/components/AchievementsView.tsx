@@ -1,11 +1,12 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { ChevronLeft, Trophy, Medal, Zap, Target, Award, Star } from 'lucide-react';
-import { Achievement } from '../types';
+import { ChevronLeft, Trophy, Medal, Zap, Target, Award, Star, Sparkles } from 'lucide-react';
+import { Achievement, MarathonReadyingProfile } from '../types';
 import { cn } from '../lib/utils';
 
 interface AchievementsViewProps {
   achievements: Achievement[];
+  marathonReadying?: MarathonReadyingProfile;
   onBack: () => void;
 }
 
@@ -17,7 +18,7 @@ const iconMap: Record<string, React.ReactNode> = {
   star: <Star size={24} />,
 };
 
-export default function AchievementsView({ achievements, onBack }: AchievementsViewProps) {
+export default function AchievementsView({ achievements, marathonReadying, onBack }: AchievementsViewProps) {
   const unlocked = achievements.filter(a => a.unlockedAt);
   const locked = achievements.filter(a => !a.unlockedAt);
 
@@ -37,12 +38,40 @@ export default function AchievementsView({ achievements, onBack }: AchievementsV
             {unlocked.length} of {achievements.length} Unlocked
           </p>
         </div>
-        <div className="w-10 h-10 rounded-full bg-yellow-500/10 flex items-center justify-center border border-yellow-500/20">
-          <Trophy size={20} className="text-yellow-500" />
+        <div className="w-10 h-10 rounded-full bg-yellow-500/10 flex items-center justify-center border border-yellow-500/20 text-yellow-500">
+          {marathonReadying ? <span className="text-xs font-bold">{marathonReadying.level}</span> : <Trophy size={20} />}
         </div>
       </header>
 
       <div className="flex-1 overflow-y-auto p-6 space-y-8 pb-24">
+        {marathonReadying && (
+          <section className="rounded-3xl border border-yellow-400/20 bg-zinc-900 p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-zinc-400">
+                <Sparkles size={16} className="text-yellow-400" />
+                <span className="text-xs font-semibold uppercase tracking-normal">Marathon Readying</span>
+              </div>
+              <span className="rounded-full bg-yellow-400/10 px-3 py-1 text-xs font-bold text-yellow-200">
+                {marathonReadying.achievementPoints} achievement pts
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <div className="text-lg font-light">{marathonReadying.level}</div>
+                <div className="text-[9px] font-bold uppercase tracking-widest text-zinc-600">Level</div>
+              </div>
+              <div>
+                <div className="text-lg font-light">{marathonReadying.totalPoints}</div>
+                <div className="text-[9px] font-bold uppercase tracking-widest text-zinc-600">Total</div>
+              </div>
+              <div>
+                <div className="text-lg font-light">{marathonReadying.currentStreak}d</div>
+                <div className="text-[9px] font-bold uppercase tracking-widest text-zinc-600">Streak</div>
+              </div>
+            </div>
+          </section>
+        )}
+
         {/* Unlocked Section */}
         {unlocked.length > 0 && (
           <section className="space-y-4">
@@ -59,7 +88,10 @@ export default function AchievementsView({ achievements, onBack }: AchievementsV
                     {iconMap[achievement.iconName] || <Medal size={24} />}
                   </div>
                   <div className="flex-1">
-                    <h3 className="text-sm font-medium">{achievement.title}</h3>
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-medium">{achievement.title}</h3>
+                      <span className="shrink-0 text-xs font-bold text-yellow-200">+50</span>
+                    </div>
                     <p className="text-xs text-zinc-500">{achievement.description}</p>
                     <div className="mt-1 text-[8px] uppercase tracking-widest text-zinc-600 font-bold">
                       Unlocked {new Date(achievement.unlockedAt!).toLocaleDateString()}

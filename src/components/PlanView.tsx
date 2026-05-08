@@ -1,9 +1,12 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { ChevronLeft, Calendar, CheckCircle2, Circle, Clock, MapPin } from 'lucide-react';
+import { ChevronLeft, Calendar, CheckCircle2, Circle, Clock, MapPin, XCircle, Sparkles } from 'lucide-react';
 import { Workout, WorkoutType } from '../types';
 import { cn } from '../lib/utils';
-import { startOfWeek, addDays, format, isSameDay, parseISO } from 'date-fns';
+import { startOfWeek, addDays, format, isSameDay } from 'date-fns';
+import { formatDateLabel, parseLocalDate, todayDate } from '../lib/date';
+import { getWorkoutReadyingEarned, getWorkoutReadyingPreview } from '../services/marathonReadyingService';
+import { getCompletedDistanceLabel, getCompletedDurationLabel } from '../services/runMetricsService';
 
 interface PlanViewProps {
   workouts: Workout[];
@@ -26,14 +29,15 @@ const TYPE_COLORS: Record<WorkoutType, string> = {
 };
 
 export default function PlanView({ workouts, goalDate, onBack, onSelectWorkout, onSetNewGoal }: PlanViewProps) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = todayDate();
   // Group by actual calendar weeks
   const weeks: { weekNumber: number; days: (Workout | null)[] }[] = [];
   
   if (workouts.length > 0) {
-    const firstDate = parseISO(workouts[0].date);
-    const lastDate = parseISO(goalDate);
+    const firstDate = parseLocalDate(workouts[0].date);
+    const profileGoalDate = parseLocalDate(goalDate);
+    const finalWorkoutDate = parseLocalDate(workouts[workouts.length - 1].date);
+    const lastDate = profileGoalDate > finalWorkoutDate ? profileGoalDate : finalWorkoutDate;
     
     let currentDate = startOfWeek(firstDate, { weekStartsOn: 1 });
     let weekIndex = 1;
@@ -61,14 +65,28 @@ export default function PlanView({ workouts, goalDate, onBack, onSelectWorkout, 
         </button>
         <div className="flex-1">
           <h1 className="text-xl font-medium">Training Plan</h1>
-          <div className="text-xs text-zinc-500">Goal: {format(parseISO(goalDate), 'MMM d, yyyy')}</div>
+          <div className="text-xs text-zinc-500">Goal: {formatDateLabel(goalDate, 'MMM d, yyyy')}</div>
           <button onClick={onSetNewGoal} className="text-xs text-zinc-400 hover:text-zinc-100 underline mt-1">Set New Goal</button>
         </div>
       </header>
 
       {/* Content */}
       <div className="p-6 space-y-10 pb-24">
-        {weeks.map((week) => (
+        {weeks.length === 0 ? (
+          <div className="rounded-3xl border border-zinc-800 bg-zinc-900/40 p-6 text-center space-y-4">
+            <Calendar size={28} className="mx-auto text-zinc-500" />
+            <div className="space-y-2">
+              <h2 className="text-lg font-medium">Training plan is generating</h2>
+              <p className="text-sm text-zinc-500">Set a goal again if workouts do not appear in a moment.</p>
+            </div>
+            <button
+              onClick={onSetNewGoal}
+              className="w-full rounded-2xl bg-zinc-100 px-4 py-3 text-sm font-bold text-zinc-900 transition-colors hover:bg-white"
+            >
+              Set New Goal
+            </button>
+          </div>
+        ) : weeks.map((week) => (
           <section key={week.weekNumber} className="space-y-4">
             <div className="flex items-center justify-between px-2">
               <h2 className="text-sm font-semibold uppercase tracking-widest text-zinc-500">Week {week.weekNumber}</h2>
@@ -81,11 +99,11 @@ export default function PlanView({ workouts, goalDate, onBack, onSelectWorkout, 
               {week.days.map((workout, dayIndex) => {
                 const firstWorkoutInWeek = week.days.find(d => d !== null);
                 const weekStartDate = firstWorkoutInWeek 
-                  ? startOfWeek(parseISO(firstWorkoutInWeek.date), { weekStartsOn: 1 })
-                  : addDays(startOfWeek(parseISO(workouts[0].date), { weekStartsOn: 1 }), (week.weekNumber - 1) * 7);
+                  ? startOfWeek(parseLocalDate(firstWorkoutInWeek.date), { weekStartsOn: 1 })
+                  : addDays(startOfWeek(parseLocalDate(workouts[0].date), { weekStartsOn: 1 }), (week.weekNumber - 1) * 7);
                 
                 const dayDate = addDays(weekStartDate, dayIndex);
-                const isGoalDay = isSameDay(dayDate, parseISO(goalDate));
+                const isGoalDay = isSameDay(dayDate, parseLocalDate(goalDate));
                 const goalWorkout = workouts.find(w => w.date === goalDate);
                 const isGoalDayCompleted = goalWorkout?.status === 'completed';
 
@@ -123,7 +141,18 @@ export default function PlanView({ workouts, goalDate, onBack, onSelectWorkout, 
                   );
                 }
 
-                const isFuture = parseISO(workout.date) > today;
+                const isFuture = parseLocalDate(workout.date) > today;
+                const readyingPoints = workout.status === 'completed'
+                  ? getWorkoutReadyingEarned(workout)
+                  : getWorkoutReadyingPreview(workout);
+                const durationLabel = workout.status === 'completed'
+                  ? getCompletedDurationLabel(workout)
+                  : `${workout.durationMinutes}m`;
+                const distanceLabel = workout.status === 'completed'
+                  ? getCompletedDistanceLabel(workout)
+                  : workout.distanceTarget
+                    ? `${workout.distanceTarget}km`
+                    : null;
 
                 return (
                   <motion.button
@@ -135,12 +164,16 @@ export default function PlanView({ workouts, goalDate, onBack, onSelectWorkout, 
                       isFuture ? "bg-zinc-900/10 border-zinc-900/30 opacity-50 cursor-default" :
                       workout.status === 'completed' 
                         ? "bg-zinc-900/30 border-zinc-900 opacity-60" 
-                        : "bg-zinc-900/50 border-zinc-800/50 hover:border-zinc-700"
+                        : workout.status === 'missed'
+                          ? "bg-red-500/5 border-red-500/20"
+                      : "bg-zinc-900/50 border-zinc-800/50 hover:border-zinc-700"
                     )}
                   >
                     <div className="shrink-0">
                       {workout.status === 'completed' ? (
                         <CheckCircle2 size={24} className="text-green-500" />
+                      ) : workout.status === 'missed' ? (
+                        <XCircle size={24} className="text-red-400" />
                       ) : isFuture ? (
                         <div className="w-6 h-6 rounded-full border border-zinc-700 flex items-center justify-center text-[10px] text-zinc-700">PRE</div>
                       ) : (
@@ -151,25 +184,34 @@ export default function PlanView({ workouts, goalDate, onBack, onSelectWorkout, 
                     <div className="flex-1 text-left">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">
-                          {format(parseISO(workout.date), 'EEE, MMM d')}
+                          {formatDateLabel(workout.date)}
                         </span>
                         <span className={cn("text-[10px] px-2 py-0.5 rounded-full border font-bold uppercase tracking-widest", TYPE_COLORS[workout.type])}>
                           {workout.type}
                         </span>
                       </div>
-                      <div className="font-medium">{workout.durationMinutes}m {workout.type}</div>
+                      <div className="font-medium">
+                        {workout.status === 'completed' ? `${durationLabel} completed` : `${durationLabel} ${workout.type}`}
+                      </div>
                     </div>
 
                     <div className="flex flex-col items-end gap-1 text-zinc-500">
-                      {workout.distanceTarget && (
+                      <div className={cn(
+                        "flex items-center gap-1 text-xs font-bold",
+                        workout.status === 'completed' ? "text-yellow-300" : "text-zinc-600"
+                      )}>
+                        <Sparkles size={12} />
+                        <span>+{readyingPoints}</span>
+                      </div>
+                      {distanceLabel && (
                         <div className="flex items-center gap-1 text-xs">
                           <MapPin size={12} />
-                          <span>{workout.distanceTarget}km</span>
+                          <span>{distanceLabel}</span>
                         </div>
                       )}
                       <div className="flex items-center gap-1 text-xs">
                         <Clock size={12} />
-                        <span>{workout.durationMinutes}m</span>
+                        <span>{durationLabel}</span>
                       </div>
                     </div>
                   </motion.button>

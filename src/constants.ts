@@ -1,5 +1,6 @@
-import { addDays, format, startOfWeek } from 'date-fns';
-import { UserProfile, Workout, WorkoutType } from './types';
+import { addDays, isAfter } from 'date-fns';
+import { ExperienceLevel, GoalType, UserProfile, Workout, WorkoutType } from './types';
+import { daysBetweenDates, parseLocalDate, todayDate, toISODate } from './lib/date';
 
 export const WORKOUT_DESCRIPTIONS: Record<WorkoutType, string> = {
   'Easy run': 'Build base aerobic fitness. You should be able to hold a conversation.',
@@ -13,17 +14,45 @@ export const WORKOUT_DESCRIPTIONS: Record<WorkoutType, string> = {
   'Mobility/recovery session': 'Stretching and foam rolling to prevent injury.'
 };
 
+const DEFAULT_TRAINING_DAYS = [1, 2, 3, 5, 6];
+const GOAL_TYPES: GoalType[] = ['5k', '10k', 'half-marathon', 'marathon', 'fitness'];
+const EXPERIENCE_LEVELS: ExperienceLevel[] = ['beginner', 'intermediate', 'advanced'];
+
+function normalizePreferredDays(days: unknown) {
+  const normalized = Array.isArray(days)
+    ? [...new Set(days.filter((day): day is number => Number.isInteger(day) && day >= 0 && day <= 6))]
+    : [];
+
+  return normalized.length > 0 ? normalized.sort((a, b) => a - b) : DEFAULT_TRAINING_DAYS;
+}
+
+function normalizeWeeklyMileage(value: unknown) {
+  const mileage = typeof value === 'number' && Number.isFinite(value) ? value : 15;
+  return Math.min(160, Math.max(5, mileage));
+}
+
+function normalizeGoalType(value: unknown): GoalType {
+  return GOAL_TYPES.includes(value as GoalType) ? value as GoalType : '5k';
+}
+
+function normalizeExperienceLevel(value: unknown): ExperienceLevel {
+  return EXPERIENCE_LEVELS.includes(value as ExperienceLevel) ? value as ExperienceLevel : 'beginner';
+}
+
 export function generatePlan(profile: UserProfile): Workout[] {
   const workouts: Workout[] = [];
-  const startDate = startOfWeek(new Date(), { weekStartsOn: 1 }); // Start on Monday
-  const goalDate = new Date(profile.goalDate);
+  const startDate = todayDate();
+  const profileGoalDate = parseLocalDate(profile.goalDate);
+  const goalDate = isAfter(profileGoalDate, startDate) ? profileGoalDate : addDays(startDate, 28);
   
   // Calculate number of weeks until goal
-  const diffTime = Math.abs(goalDate.getTime() - startDate.getTime());
-  const weeks = Math.max(4, Math.ceil(diffTime / (1000 * 60 * 60 * 24 * 7)));
+  const daysToGoal = daysBetweenDates(startDate, goalDate);
+  const weeks = Math.max(4, Math.ceil((daysToGoal + 1) / 7));
   
-  const preferredDays = profile.preferredDays.length > 0 ? profile.preferredDays : [1, 2, 3, 5, 6]; // Default if none selected
-  const baseMileage = profile.weeklyMileagePreference || 15;
+  const preferredDays = normalizePreferredDays(profile.preferredDays);
+  const baseMileage = normalizeWeeklyMileage(profile.weeklyMileagePreference);
+  const goalType = normalizeGoalType(profile.goalType);
+  const experienceLevel = normalizeExperienceLevel(profile.experienceLevel);
 
   // Distance multipliers based on goal
   const goalMultipliers: Record<string, number> = {
@@ -33,10 +62,10 @@ export function generatePlan(profile: UserProfile): Workout[] {
     'marathon': 3.5,
     'fitness': 1.0
   };
-  const goalMult = goalMultipliers[profile.goalType] || 1.0;
+  const goalMult = goalMultipliers[goalType] || 1.0;
 
   // Experience multiplier
-  const expMult = profile.experienceLevel === 'beginner' ? 0.8 : profile.experienceLevel === 'advanced' ? 1.3 : 1.0;
+  const expMult = experienceLevel === 'beginner' ? 0.8 : experienceLevel === 'advanced' ? 1.3 : 1.0;
   
   // Total volume multiplier
   const mult = (baseMileage / 20) * goalMult * expMult;
@@ -47,7 +76,7 @@ export function generatePlan(profile: UserProfile): Workout[] {
     intermediate: { easy: '5:45', tempo: '5:00', interval: '4:15', long: '6:00' },
     advanced: { easy: '5:00', tempo: '4:15', interval: '3:30', long: '5:15' }
   };
-  const paces = basePaces[profile.experienceLevel] || basePaces.intermediate;
+  const paces = basePaces[experienceLevel] || basePaces.intermediate;
 
   for (let w = 0; w < weeks; w++) {
     // Determine intensity for this week
@@ -114,7 +143,7 @@ export function generatePlan(profile: UserProfile): Workout[] {
       }
 
       if (type) {
-        const dateStr = format(date, 'yyyy-MM-dd');
+        const dateStr = toISODate(date);
         workouts.push({
           id: `plan-${dateStr}`,
           date: dateStr,

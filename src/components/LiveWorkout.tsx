@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronLeft, Play, Pause, Square, Activity, Zap, Clock, MapPin } from 'lucide-react';
-import { Workout } from '../types';
+import { ChevronLeft, Play, Pause, Square, Activity, Zap, Clock, MapPin, Sparkles } from 'lucide-react';
+import { GpsPathPoint, LiveWorkoutData, Workout } from '../types';
 import { cn, calculateDistance } from '../lib/utils';
 import { playAudioCue } from '../services/audioService';
+import { getWorkoutReadyingPreview } from '../services/marathonReadyingService';
+import { buildLiveWorkoutData } from '../services/runMetricsService';
 
 interface LiveWorkoutProps {
   workout: Workout;
-  onComplete: (data: { distance: number; duration: number; path: { lat: number; lng: number; timestamp: number }[] }) => void;
+  onComplete: (data: LiveWorkoutData) => void;
   onCancel: () => void;
 }
 
@@ -18,7 +20,7 @@ export default function LiveWorkout({ workout, onComplete, onCancel }: LiveWorko
   const [pace, setPace] = useState('0:00');
   const [speed, setSpeed] = useState(0); // km/h
   const [isFinished, setIsFinished] = useState(false);
-  const [path, setPath] = useState<{ lat: number; lng: number; speed: number; timestamp: number }[]>([]);
+  const [path, setPath] = useState<GpsPathPoint[]>([]);
   const [gpsStatus, setGpsStatus] = useState<'searching' | 'active' | 'error'>('searching');
   const [accuracy, setAccuracy] = useState<number | null>(null);
   
@@ -26,6 +28,7 @@ export default function LiveWorkout({ workout, onComplete, onCancel }: LiveWorko
   const watchIdRef = useRef<number | null>(null);
   const wakeLockRef = useRef<any>(null);
   const lastUpdateRef = useRef<number>(0);
+  const readyingPreview = getWorkoutReadyingPreview(workout);
 
   // Phase 2: Local Buffer (Data Safety) - Load from storage on mount
   useEffect(() => {
@@ -136,7 +139,7 @@ export default function LiveWorkout({ workout, onComplete, onCancel }: LiveWorko
                   }
                 }
               }
-              return [...prev, { lat: latitude, lng: longitude, speed: currentSpeed, timestamp: now }];
+              return [...prev, { lat: latitude, lng: longitude, speed: currentSpeed, accuracy: acc, timestamp: now }];
             });
           },
           (error) => {
@@ -204,11 +207,11 @@ export default function LiveWorkout({ workout, onComplete, onCancel }: LiveWorko
   const handleFinish = () => {
     // Phase 2: Clear local buffer on completion
     localStorage.removeItem(`jogga_workout_buffer_${workout.id}`);
-    onComplete({
+    onComplete(buildLiveWorkoutData({
       distance,
-      duration: Math.floor(seconds / 60),
-      path
-    });
+      seconds,
+      path,
+    }));
   };
 
   return (
@@ -267,7 +270,7 @@ export default function LiveWorkout({ workout, onComplete, onCancel }: LiveWorko
         </div>
 
         {/* Target Info */}
-        <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4 w-full flex items-center justify-between">
+        <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4 w-full grid grid-cols-[1fr_auto_auto] items-center gap-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center">
               <Zap size={18} className="text-yellow-500" />
@@ -280,6 +283,13 @@ export default function LiveWorkout({ workout, onComplete, onCancel }: LiveWorko
           <div className="text-right">
             <div className="text-[10px] uppercase tracking-widest text-zinc-500">Effort</div>
             <div className="text-sm font-medium">{workout.effortTarget}/10</div>
+          </div>
+          <div className="text-right">
+            <div className="flex items-center justify-end gap-1 text-[10px] uppercase tracking-widest text-zinc-500">
+              <Sparkles size={10} className="text-yellow-400" />
+              <span>Readying</span>
+            </div>
+            <div className="text-sm font-medium text-yellow-100">+{readyingPreview}</div>
           </div>
         </div>
       </div>

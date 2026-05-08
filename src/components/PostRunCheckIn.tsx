@@ -1,52 +1,59 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { CheckCircle2, Star, MessageSquare, ChevronRight, Activity, Zap, MapPin, Sparkles, Trophy, Info } from 'lucide-react';
-import { Workout, WorkoutResult } from '../types';
+import { LiveWorkoutData, Workout, WorkoutResult } from '../types';
 import { cn } from '../lib/utils';
 import { getCachedAIResponse } from '../services/geminiService';
+import { buildFeedbackReward } from '../services/feedbackRewardService';
+import { getWorkoutReadyingPreview } from '../services/marathonReadyingService';
+import { formatPace, getMeasurementLabel } from '../services/runMetricsService';
+import { buildPostRunCoachFallback, buildPostRunCoachPrompt } from '../services/postRunCoachingService';
 
 interface PostRunCheckInProps {
   workout: Workout;
-  liveData: { distance: number; duration: number; path: { lat: number; lng: number; timestamp: number }[] } | null;
+  liveData: LiveWorkoutData | null;
   onComplete: (result: WorkoutResult) => void;
 }
 
 export default function PostRunCheckIn({ workout, liveData, onComplete }: PostRunCheckInProps) {
   const [effort, setEffort] = useState(5);
   const [notes, setNotes] = useState('');
-  const [actualDistance, setActualDistance] = useState(liveData?.distance || workout.distanceTarget || 0);
-  const [actualDuration, setActualDuration] = useState(liveData?.duration || workout.durationMinutes);
+  const [actualDistance, setActualDistance] = useState(liveData?.distance ?? 0);
+  const [actualDuration, setActualDuration] = useState(liveData?.duration ?? 0);
   const [coachOpinion, setCoachOpinion] = useState<string | null>(null);
   const [isGeneratingOpinion, setIsGeneratingOpinion] = useState(false);
+  const isMeasuredRun = Boolean(liveData);
+  const measurementLabel = getMeasurementLabel(liveData?.measurementSource);
+  const completionReadying = useMemo(() => getWorkoutReadyingPreview(workout), [workout]);
+  const feedbackReward = useMemo(() => buildFeedbackReward(workout, {
+    effort,
+    notes,
+    actualDistance,
+    actualDuration,
+    measurementSource: liveData?.measurementSource || 'manual',
+  }), [actualDistance, actualDuration, effort, liveData?.measurementSource, notes, workout]);
+
+  useEffect(() => {
+    if (!liveData) return;
+    setActualDistance(liveData.distance);
+    setActualDuration(liveData.duration);
+  }, [liveData]);
 
   useEffect(() => {
     const getCoachOpinion = async () => {
       if (!liveData) return;
       
+      const fallbackInsight = buildPostRunCoachFallback(workout, liveData);
       setIsGeneratingOpinion(true);
       try {
-        const avgPace = liveData.distance > 0 ? (liveData.duration / liveData.distance).toFixed(2) : '0:00';
-        
-        const prompt = `You are a professional running coach. A runner just finished a workout.
-        Workout Type: ${workout.type}
-        Target Pace: ${workout.paceTarget || 'Easy effort'}
-        Target Duration: ${workout.durationMinutes} min
-        
-        Actual Stats:
-        Distance: ${liveData.distance.toFixed(2)} km
-        Duration: ${liveData.duration} min
-        Average Pace: ${avgPace} min/km
-        
-        Provide a short, encouraging, and insightful "Coach's Opinion" (max 3 sentences). 
-        Mention if they hit their targets and give one tip for recovery or their next run.
-        Keep the tone professional yet motivating.`;
+        const prompt = buildPostRunCoachPrompt(workout, liveData);
 
         const response = await getCachedAIResponse(prompt);
 
-        setCoachOpinion(response.text || "Great job today! Keep up the consistency.");
+        setCoachOpinion(response.text || fallbackInsight);
       } catch (err) {
         console.error("Failed to get coach opinion:", err);
-        setCoachOpinion("Excellent work on completing your session. Consistency is the key to progress!");
+        setCoachOpinion(fallbackInsight);
       } finally {
         setIsGeneratingOpinion(false);
       }
@@ -56,19 +63,28 @@ export default function PostRunCheckIn({ workout, liveData, onComplete }: PostRu
   }, [liveData, workout]);
 
   const handleSubmit = () => {
-    const paceVal = actualDistance > 0 ? (actualDuration / actualDistance) : 0;
-    const mins = Math.floor(paceVal);
-    const secs = Math.round((paceVal - mins) * 60);
-    const avgPace = `${mins}:${secs.toString().padStart(2, '0')} min/km`;
+    const safeDistance = Number.isFinite(actualDistance) ? Math.max(0, actualDistance) : 0;
+    const safeDuration = Number.isFinite(actualDuration) ? Math.max(0, actualDuration) : 0;
+    const avgPace = formatPace(safeDuration, safeDistance);
+    const finalFeedbackReward = buildFeedbackReward(workout, {
+      effort,
+      notes,
+      actualDistance: safeDistance,
+      actualDuration: safeDuration,
+      measurementSource: liveData?.measurementSource || 'manual',
+    });
 
     onComplete({
       completedAt: new Date().toISOString(),
-      actualDistance,
-      actualDuration,
+      actualDistance: safeDistance,
+      actualDuration: safeDuration,
       avgPace,
       perceivedEffort: effort,
       notes,
-      path: liveData?.path
+      feedbackReward: finalFeedbackReward,
+      path: liveData?.path,
+      measurementSource: liveData?.measurementSource || 'manual',
+      gpsMetrics: liveData?.gpsMetrics,
     });
   };
 
@@ -233,37 +249,35 @@ export default function PostRunCheckIn({ workout, liveData, onComplete }: PostRu
               <div className="space-y-1">
                 <div className="text-[10px] uppercase tracking-widest text-zinc-500">Distance</div>
                 <div className="text-3xl font-light tabular-nums">
-                  {liveData.distance.toFixed(2)}
+                  {actualDistance.toFixed(2)}
                   <span className="text-xs ml-1 opacity-50">km</span>
                 </div>
               </div>
               <div className="space-y-1">
                 <div className="text-[10px] uppercase tracking-widest text-zinc-500">Duration</div>
                 <div className="text-3xl font-light tabular-nums">
-                  {liveData.duration}
+                  {actualDuration}
                   <span className="text-xs ml-1 opacity-50">min</span>
                 </div>
               </div>
               <div className="space-y-1">
                 <div className="text-[10px] uppercase tracking-widest text-zinc-500">Avg Pace</div>
                 <div className="text-3xl font-light tabular-nums">
-                  {liveData.distance > 0 ? (() => {
-                    const paceVal = liveData.duration / liveData.distance;
-                    const mins = Math.floor(paceVal);
-                    const secs = Math.round((paceVal - mins) * 60);
-                    return `${mins}:${secs.toString().padStart(2, '0')}`;
-                  })() : '0:00'}
+                  {formatPace(actualDuration, actualDistance).replace(' min/km', '')}
                   <span className="text-xs ml-1 opacity-50">min/km</span>
                 </div>
               </div>
               <div className="space-y-1">
-                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Work Done</div>
+                <div className="text-[10px] uppercase tracking-widest text-zinc-500">{measurementLabel}</div>
                 <div className="text-3xl font-light tabular-nums">
-                  {Math.round(liveData.distance * 65)}
-                  <span className="text-xs ml-1 opacity-50">kcal</span>
+                  {liveData.gpsMetrics.sampleCount}
+                  <span className="text-xs ml-1 opacity-50">pts</span>
                 </div>
               </div>
             </div>
+            <p className="text-[10px] leading-relaxed text-zinc-500">
+              Feedback, rewards, readiness, and saved history use these measured run metrics.
+            </p>
           </section>
         )}
         
@@ -296,24 +310,30 @@ export default function PostRunCheckIn({ workout, liveData, onComplete }: PostRu
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-zinc-400">
               <Activity size={14} />
-              <label className="text-[10px] font-semibold uppercase tracking-widest">Distance (km)</label>
+              <label className="text-[10px] font-semibold uppercase tracking-widest">
+                {isMeasuredRun ? 'Measured Distance (km)' : 'Distance (km)'}
+              </label>
             </div>
             <input 
               type="number" 
               value={actualDistance}
               onChange={(e) => setActualDistance(parseFloat(e.target.value))}
+              readOnly={isMeasuredRun}
               className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-lg focus:border-zinc-500 outline-none"
             />
           </div>
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-zinc-400">
               <Star size={14} />
-              <label className="text-[10px] font-semibold uppercase tracking-widest">Duration (min)</label>
+              <label className="text-[10px] font-semibold uppercase tracking-widest">
+                {isMeasuredRun ? 'Measured Duration (min)' : 'Duration (min)'}
+              </label>
             </div>
             <input 
               type="number" 
               value={actualDuration}
-              onChange={(e) => setActualDuration(parseInt(e.target.value))}
+              onChange={(e) => setActualDuration(parseFloat(e.target.value))}
+              readOnly={isMeasuredRun}
               className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-lg focus:border-zinc-500 outline-none"
             />
           </div>
@@ -331,6 +351,67 @@ export default function PostRunCheckIn({ workout, liveData, onComplete }: PostRu
             onChange={(e) => setNotes(e.target.value)}
             className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-4 h-32 focus:border-zinc-500 outline-none resize-none"
           />
+        </section>
+
+        {/* Marathon Readying */}
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-zinc-400">
+              <Sparkles size={16} className="text-yellow-400" />
+              <h2 className="text-xs font-semibold uppercase tracking-normal">Marathon Readying</h2>
+            </div>
+            <span className="rounded-full bg-yellow-400/10 px-3 py-1 text-xs font-bold text-yellow-200">
+              +{completionReadying + feedbackReward.rewardPoints}
+            </span>
+          </div>
+
+          <motion.div
+            key={`${feedbackReward.signalStrength}-${feedbackReward.rewardPoints}-${notes.length}-${effort}`}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-3xl border border-yellow-400/20 bg-yellow-400/10 p-5 space-y-4 overflow-hidden"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-yellow-100">
+                Run and feedback received
+              </span>
+              <span className={cn(
+                'shrink-0 rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-widest',
+                feedbackReward.rewardLevel === 'high'
+                  ? 'bg-green-400/15 text-green-200'
+                  : feedbackReward.rewardLevel === 'medium'
+                    ? 'bg-blue-400/15 text-blue-200'
+                    : 'bg-zinc-100/10 text-zinc-300'
+              )}>
+                {feedbackReward.signalStrength} signal
+              </span>
+            </div>
+
+            <p className="text-sm leading-relaxed text-zinc-100 break-words">
+              {feedbackReward.feedbackSummary}
+            </p>
+
+            <div className="flex items-start gap-3 rounded-2xl bg-zinc-950/50 p-4">
+              <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-yellow-400 text-zinc-950">
+                <Zap size={14} fill="currentColor" />
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-yellow-50">{feedbackReward.rewardCue}</p>
+                <p className="text-xs leading-relaxed text-zinc-400">Next: {feedbackReward.nextAction}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 border-t border-yellow-400/10 pt-4">
+              <div>
+                <div className="text-sm font-medium text-zinc-100">+{completionReadying}</div>
+                <div className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Completion</div>
+              </div>
+              <div>
+                <div className="text-sm font-medium text-zinc-100">+{feedbackReward.rewardPoints}</div>
+                <div className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Feedback</div>
+              </div>
+            </div>
+          </motion.div>
         </section>
       </div>
 

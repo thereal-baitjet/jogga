@@ -15,6 +15,13 @@ export interface UserProfile {
   id: string;
   uid?: string;
   email?: string;
+  displayName?: string | null;
+  photoURL?: string | null;
+  authProvider?: string | null;
+  createdAt?: string;
+  updatedAt?: string | null;
+  lastLoginAt?: string | null;
+  profileCompleted?: boolean;
   name: string;
   experienceLevel: ExperienceLevel;
   goalType: GoalType;
@@ -25,6 +32,12 @@ export interface UserProfile {
   readinessScore?: ReadinessScore;
   isHealthConnected?: boolean;
   healthProvider?: 'fitbit' | 'apple' | 'google';
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  stripePriceId?: string | null;
+  subscriptionStatus?: string | null;
+  subscriptionPlan?: 'monthly' | 'yearly' | string | null;
+  subscriptionVerifiedAt?: string | null;
 }
 
 export interface Workout {
@@ -40,6 +53,75 @@ export interface Workout {
   result?: WorkoutResult;
 }
 
+export interface GpsPathPoint {
+  lat: number;
+  lng: number;
+  timestamp: number;
+  speed?: number;
+  accuracy?: number;
+}
+
+export type RunMeasurementSource = 'gps' | 'timer' | 'manual';
+
+export interface RunMeasurementMetadata {
+  source: RunMeasurementSource;
+  sampleCount: number;
+  durationSeconds: number;
+  measuredAt: string;
+  averageAccuracyMeters?: number;
+  bestAccuracyMeters?: number;
+  worstAccuracyMeters?: number;
+}
+
+export interface LiveWorkoutData {
+  distance: number;
+  duration: number;
+  durationSeconds: number;
+  path: GpsPathPoint[];
+  measurementSource: RunMeasurementSource;
+  gpsMetrics: RunMeasurementMetadata;
+}
+
+export type FeedbackSignalStrength = 'weak' | 'useful' | 'strong';
+export type FeedbackRewardLevel = 'small' | 'medium' | 'high';
+
+export interface FeedbackReward {
+  acknowledgedAt: string;
+  feedbackSummary: string;
+  rewardCue: string;
+  signalStrength: FeedbackSignalStrength;
+  rewardLevel: FeedbackRewardLevel;
+  rewardPoints: number;
+  nextAction: string;
+}
+
+export type MarathonReadyingEventTone = 'completion' | 'feedback' | 'achievement' | 'streak' | 'usage' | 'readiness';
+
+export interface MarathonReadyingEvent {
+  id: string;
+  title: string;
+  message: string;
+  points: number;
+  createdAt: string;
+  tone: MarathonReadyingEventTone;
+}
+
+export interface MarathonReadyingProfile {
+  totalPoints: number;
+  level: number;
+  currentLevelPoints: number;
+  nextLevelPoints: number;
+  progressPercent: number;
+  currentStreak: number;
+  completedWorkouts: number;
+  usagePoints: number;
+  readinessPoints: number;
+  feedbackPoints: number;
+  achievementPoints: number;
+  todayPoints: number;
+  lastEvent: MarathonReadyingEvent | null;
+}
+
 export interface WorkoutResult {
   completedAt: string;
   actualDistance: number;
@@ -47,7 +129,10 @@ export interface WorkoutResult {
   avgPace: string;
   perceivedEffort: number;
   notes: string;
-  path?: { lat: number; lng: number; timestamp: number }[];
+  feedbackReward?: FeedbackReward;
+  path?: GpsPathPoint[];
+  measurementSource?: RunMeasurementSource;
+  gpsMetrics?: RunMeasurementMetadata;
 }
 
 export interface ReadinessScore {
