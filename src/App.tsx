@@ -38,12 +38,13 @@ import {
   User
 } from 'firebase/auth';
 import { doc, setDoc, collection, onSnapshot, query, writeBatch, getDocs, runTransaction } from 'firebase/firestore';
-import { createRecentHistory, defaultGoalDate, isDateBeforeToday, parseLocalDate, todayISO } from './lib/date';
+import { defaultGoalDate, isDateBeforeToday, parseLocalDate, todayISO } from './lib/date';
 import { buildMarathonReadyingProfile, buildWorkoutReadyingEvent } from './services/marathonReadyingService';
 import { getActualDistance } from './services/runMetricsService';
 import { isCordovaRuntime, reauthenticateWithCordovaGoogle, signInWithCordovaGoogle } from './services/cordovaOAuthService';
 import { buildCompletedWorkoutForFirestore, sanitizeWorkoutResultForFirestore } from './services/firestoreDataService';
 import { setAnalyticsUser, trackEvent, trackPageView } from './services/analyticsService';
+import { buildHealthMetricCards, normalizeHealthSyncResponse } from './services/healthMetricsService';
 import { CHECKOUT_INTENT_STORAGE_KEY, CheckoutIntent, normalizeBillingPlanId } from './config/billing';
 
 type Screen = 'onboarding' | 'dashboard' | 'workout-detail' | 'live-workout' | 'post-run' | 'plan-view' | 'subscription' | 'profile' | 'achievements' | 'health' | 'auth';
@@ -570,24 +571,19 @@ export default function App() {
     setAchievements(updatedAchievements);
   }, [plan]);
 
-  const [healthMetrics, setHealthMetrics] = useState<HealthMetric[]>(() => [
-    { 
-      id: 'hr', type: 'hr', label: 'Resting HR', value: 58, unit: 'bpm', trend: 'down', updatedAt: new Date().toISOString(),
-      history: createRecentHistory([62, 61, 60, 59, 58])
-    },
-    { 
-      id: 'sleep', type: 'sleep', label: 'Sleep Score', value: 82, unit: '/100', trend: 'up', updatedAt: new Date().toISOString(),
-      history: createRecentHistory([75, 78, 80, 81, 82])
-    },
-    { 
-      id: 'vo2max', type: 'vo2max', label: 'VO2 Max', value: 48, unit: 'ml/kg/min', trend: 'stable', updatedAt: new Date().toISOString(),
-      history: createRecentHistory([47.5, 47.6, 47.8, 47.9, 48])
-    },
-    { 
-      id: 'weight', type: 'weight', label: 'Weight', value: 74.5, unit: 'kg', trend: 'down', updatedAt: new Date().toISOString(),
-      history: createRecentHistory([76, 75.8, 75.5, 75, 74.5])
-    },
-  ]);
+  const [healthMetrics, setHealthMetrics] = useState<HealthMetric[]>(() => buildHealthMetricCards({
+    date: todayISO(),
+    steps: 0,
+    distanceKm: 0,
+    activeCalories: 0,
+    avgHeartRate: null,
+    sleepMinutes: 0,
+    sleepScore: null,
+    weightKg: null,
+    source: 'google_fit',
+    syncedAt: new Date().toISOString(),
+    persisted: false,
+  }));
   const [readiness, setReadiness] = useState<ReadinessScore>({
     score: 84,
     consistency: 91,
@@ -678,7 +674,7 @@ export default function App() {
     const currentUser = auth.currentUser || user;
 
     if (!currentUser) {
-      throw new Error('Sign in before connecting Google Health.');
+      throw new Error('Sign in before connecting Health Metrics.');
     }
 
     if (isCordovaRuntime()) {
@@ -715,11 +711,11 @@ export default function App() {
 
         return accessToken;
       } catch (error) {
-        console.error('Cordova Google Health authorization failed', error);
+        console.error('Cordova Health Metrics authorization failed', error);
         if (error instanceof Error) {
           throw new Error(error.message);
         }
-        throw new Error('Google Health authorization failed. Check your connection and try again.');
+        throw new Error('Health Metrics authorization failed. Check your connection and try again.');
       }
     }
 
@@ -764,11 +760,11 @@ export default function App() {
 
       return accessToken;
     } catch (error) {
-      console.error('Google Health authorization failed', error);
+      console.error('Health Metrics authorization failed', error);
 
       const code = getFirebaseAuthCode(error);
       if (code === 'auth/popup-blocked') {
-        throw new Error('Allow pop-ups to connect Google Health.');
+        throw new Error('Allow pop-ups to connect Health Metrics.');
       }
 
       if (!code && error instanceof Error) {
@@ -780,68 +776,35 @@ export default function App() {
   };
 
   const syncGoogleHealthWithToken = async (accessToken: string) => {
+    const currentUser = auth.currentUser || user;
+    const idToken = await currentUser?.getIdToken();
+    if (!idToken) {
+      throw new Error('Sign in before syncing Health Metrics.');
+    }
+
     const response = await fetch('/api/health/sync', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Authorization': `Bearer ${idToken}`,
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ accessToken }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Google Health sync failed.');
+        throw new Error(data.error || 'Health Metrics sync failed.');
       }
 
-      // Update local health metrics based on Google Fit data
-      const updatedMetrics = healthMetrics.map(metric => {
-        if (metric.type === 'hr') {
-          // Google Fit aggregate data structure
-          const points = data.heartRate?.bucket?.[0]?.dataset?.[0]?.point;
-          const latestHR = points?.[0]?.value?.[0]?.fpVal || points?.[0]?.value?.[0]?.intVal;
-          if (latestHR) {
-            return {
-              ...metric,
-              value: Math.round(latestHR),
-              updatedAt: new Date().toISOString(),
-              history: [...metric.history.slice(1), { date: todayISO(), value: Math.round(latestHR) }]
-            };
-          }
-        }
-        if (metric.type === 'sleep') {
-          const points = data.sleep?.bucket?.[0]?.dataset?.[0]?.point;
-          // Sleep segment data is complex, usually we sum up segments
-          const totalSleepMillis = points?.reduce((sum: number, p: any) => sum + (p.endTimeNanos - p.startTimeNanos) / 1000000, 0) || 0;
-          const latestSleepMinutes = totalSleepMillis / 60000;
-          
-          if (latestSleepMinutes > 0) {
-            const score = Math.min(100, Math.round((latestSleepMinutes / 480) * 100));
-            return {
-              ...metric,
-              value: score,
-              updatedAt: new Date().toISOString(),
-              history: [...metric.history.slice(1), { date: todayISO(), value: score }]
-            };
-          }
-        }
-        if (metric.type === 'weight') {
-          const points = data.weight?.bucket?.[0]?.dataset?.[0]?.point;
-          const latestWeight = points?.[0]?.value?.[0]?.fpVal;
-          if (latestWeight) {
-            return {
-              ...metric,
-              value: Math.round(latestWeight * 10) / 10,
-              updatedAt: new Date().toISOString(),
-              history: [...metric.history.slice(1), { date: todayISO(), value: Math.round(latestWeight * 10) / 10 }]
-            };
-          }
-        }
-        return metric;
-      });
+      const summary = normalizeHealthSyncResponse(data);
+      const updatedMetrics = buildHealthMetricCards(summary, healthMetrics, plan);
 
       setHealthMetrics(updatedMetrics);
       trackEvent('health_sync', {
         provider: 'google',
         metric_count: updatedMetrics.length,
+        persisted: Boolean(data.persisted),
       });
   };
 

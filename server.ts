@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import axios from "axios";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { createCoachOpinionResponse } from "./api/_utils.js";
+import healthSyncHandler from "./api/health/sync.js";
 import { fulfillCheckoutSession, fulfillStripeWebhookEvent, fulfillSubscription } from "./api/stripe/fulfillment.js";
 import { FREE_TRIAL_DAYS, isTrialCheckout, normalizeBillingPlanId } from "./src/config/billing.js";
 
@@ -527,65 +528,7 @@ async function startServer() {
 
   // Google Health Sync Route
   app.post("/api/health/sync", async (req, res) => {
-    const { accessToken } = req.body;
-
-    if (!accessToken) {
-      return res.status(400).json({ error: "No access token provided" });
-    }
-
-    try {
-      const startTimeMillis = new Date().setHours(0, 0, 0, 0);
-      const endTimeMillis = new Date().getTime();
-
-      // Helper to fetch aggregate data
-      const fetchAggregate = async (dataTypeName: string) => {
-        return axios.post(
-          "https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate",
-          {
-            aggregateBy: [{ dataTypeName }],
-            bucketByTime: { durationMillis: 86400000 }, // 1 day
-            startTimeMillis,
-            endTimeMillis,
-          },
-          {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          }
-        );
-      };
-
-      const [hrData, sleepData, weightData] = await Promise.all([
-        fetchAggregate("com.google.heart_rate.summary"),
-        fetchAggregate("com.google.sleep.segment"),
-        fetchAggregate("com.google.weight.summary"),
-      ]);
-
-      res.json({
-        heartRate: hrData.data,
-        sleep: sleepData.data,
-        weight: weightData.data,
-      });
-    } catch (error: any) {
-      console.error("Google Health Sync Error:", error.response?.data || error.message);
-      if (axios.isAxiosError(error)) {
-        const status = error.response?.status || 500;
-        const googleError = error.response?.data?.error;
-        const message = googleError?.message || error.message || "Google Health sync failed";
-
-        if (status === 401) {
-          return res.status(401).json({ error: "Google Health authorization expired. Connect Google Health again." });
-        }
-
-        if (status === 403) {
-          return res.status(403).json({
-            error: `${message}. Enable the Fitness API in Google Cloud and make sure this Google account is allowed on the OAuth consent screen.`,
-          });
-        }
-
-        return res.status(status).json({ error: message });
-      }
-
-      res.status(500).json({ error: error.message });
-    }
+    await healthSyncHandler(req, res);
   });
 
   // API routes

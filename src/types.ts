@@ -165,13 +165,26 @@ export interface Achievement {
   category: 'milestone' | 'distance' | 'consistency' | 'speed';
 }
 
+export type HealthMetricType =
+  | 'steps'
+  | 'distance'
+  | 'active_calories'
+  | 'hr'
+  | 'resting_hr'
+  | 'sleep_duration'
+  | 'sleep_score'
+  | 'vo2max'
+  | 'weight'
+  | 'recovery_score';
+
 export interface HealthMetric {
   id: string;
-  type: 'hr' | 'sleep' | 'vo2max' | 'weight';
+  type: HealthMetricType;
   label: string;
   value: number;
   unit: string;
   trend: 'up' | 'down' | 'stable';
   updatedAt: string;
   history: { date: string; value: number }[];
+  source?: 'google_fit' | 'manual' | 'computed';
 }
