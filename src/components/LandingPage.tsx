@@ -336,7 +336,7 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
               Built for follow-through
             </div>
             <h2 className="max-w-xl text-3xl font-light leading-tight text-zinc-50 md:text-5xl">
-              The app keeps selling after signup because the plan is the product.
+              Your plan stays useful because every run feeds the next decision.
             </h2>
           </div>
 
@@ -344,7 +344,7 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
             {[
               'Onboarding captures the runner goal, schedule, experience, and weekly mileage.',
               'Stripe unlocks the plan after trial or subscription checkout.',
-              'The dashboard renders today correctly and recovers future workouts when the plan needs refreshing.',
+              'The dashboard keeps today clear and refreshes upcoming workouts when the plan needs adjustment.',
               'Completed runs feed GPS distance, pace, duration, and coaching context back into the next recommendation.',
             ].map((item) => (
               <div key={item} className="flex items-start gap-3 border-b border-zinc-800 py-4">
