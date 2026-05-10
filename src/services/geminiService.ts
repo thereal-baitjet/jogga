@@ -1,10 +1,16 @@
 import { auth } from '../firebase';
+import {
+  COACH_INSIGHT_SCHEMA_VERSION,
+  normalizeCoachInsight,
+} from './coachInsightService';
+import type { CoachInsight } from './coachInsightService';
 
 // Basic in-memory cache
 const cache = new Map<string, any>();
 
 export interface AIResponseOptions {
   fallbackText?: string;
+  fallbackData?: CoachInsight;
   cacheContext?: {
     questionType?: string;
     readinessScore?: number | string;
@@ -16,12 +22,14 @@ export interface AIResponseOptions {
 export class AIServiceError extends Error {
   code?: string;
   upgradeRequired?: boolean;
+  cta?: string;
 
-  constructor(message: string, code?: string, upgradeRequired?: boolean) {
+  constructor(message: string, code?: string, upgradeRequired?: boolean, cta?: string) {
     super(message);
     this.name = 'AIServiceError';
     this.code = code;
     this.upgradeRequired = upgradeRequired;
+    this.cta = cta;
   }
 }
 
@@ -48,6 +56,7 @@ export async function getCachedAIResponse(
       prompt,
       model,
       fallbackText: options.fallbackText,
+      fallbackData: options.fallbackData,
       cacheContext: options.cacheContext,
     }),
   });
@@ -58,10 +67,19 @@ export async function getCachedAIResponse(
       data.error || 'Failed to generate coach opinion',
       data.code,
       Boolean(data.upgradeRequired),
+      typeof data.cta === 'string' ? data.cta : undefined,
     );
   }
 
-  const response = { text: data.text || '' };
+  const insight = normalizeCoachInsight(data.data, options.fallbackData);
+  const response = {
+    text: insight.summary || data.text || '',
+    data: insight,
+    provider: typeof data.provider === 'string' ? data.provider : 'unknown',
+    cached: Boolean(data.cached),
+    fallback: Boolean(data.fallback),
+    schemaVersion: typeof data.schemaVersion === 'string' ? data.schemaVersion : COACH_INSIGHT_SCHEMA_VERSION,
+  };
   cache.set(cacheKey, response);
   return response;
 }

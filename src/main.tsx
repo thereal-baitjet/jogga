@@ -2,6 +2,8 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { LEGAL_PAGE_BY_PATH } from './components/legal/legalPages';
+import { LegalPage } from './components/legal/LegalPage';
 import { SEO_PAGE_BY_PATH } from './components/seo/seoPages';
 import { SeoTrainingPage } from './components/seo/SeoTrainingPage';
 import './index.css';
@@ -62,11 +64,12 @@ initAnalytics();
 
 const normalizedPath = window.location.pathname.replace(/\/$/, '') || '/';
 const seoPage = SEO_PAGE_BY_PATH[normalizedPath];
+const legalPage = LEGAL_PAGE_BY_PATH[normalizedPath];
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
-      {seoPage ? <SeoTrainingPage page={seoPage} /> : <App />}
+      {legalPage ? <LegalPage page={legalPage} /> : seoPage ? <SeoTrainingPage page={seoPage} /> : <App />}
     </ErrorBoundary>
   </StrictMode>,
 );

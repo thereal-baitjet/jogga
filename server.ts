@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import axios from "axios";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { createCoachOpinionResponse, enforceIpRateLimit } from "./api/_utils.js";
+import botVerifyHandler from "./api/bot/verify.js";
 import healthSyncHandler from "./api/health/sync.js";
 import { fulfillCheckoutSession, fulfillStripeWebhookEvent, fulfillSubscription } from "./api/stripe/fulfillment.js";
 import { FREE_TRIAL_DAYS, isTrialCheckout, normalizeBillingPlanId } from "./src/config/billing.js";
@@ -411,6 +412,10 @@ async function startServer() {
     } catch (error) {
       sendApiError(res, error);
     }
+  });
+
+  app.post("/api/bot/verify", async (req, res) => {
+    await botVerifyHandler(req, res);
   });
 
   app.post("/api/coach-opinion", async (req, res) => {

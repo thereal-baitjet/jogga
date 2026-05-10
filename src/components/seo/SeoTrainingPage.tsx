@@ -107,8 +107,8 @@ function SeoFooter() {
     { label: 'Training Plans', href: '/5k-training-plan' },
     { label: 'Beginner Running', href: '/beginner-running-plan' },
     { label: '5K / 10K / Marathon', href: '/10k-training-plan' },
-    { label: 'Privacy', href: '/#privacy' },
-    { label: 'Terms', href: '/#terms' },
+    { label: 'Privacy', href: '/privacy' },
+    { label: 'Terms', href: '/terms' },
   ];
 
   return (

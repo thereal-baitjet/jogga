@@ -15,7 +15,7 @@ import { calculateReadiness } from '../src/services/readinessService';
 import { buildFeedbackReward } from '../src/services/feedbackRewardService';
 import { toISODate, todayDate } from '../src/lib/date';
 import { buildLiveWorkoutData, formatPace, getActualDistance } from '../src/services/runMetricsService';
-import { buildPostRunCoachFallback, buildPostRunCoachPrompt } from '../src/services/postRunCoachingService';
+import { buildPostRunCoachFallback, buildPostRunCoachFallbackData, buildPostRunCoachPrompt } from '../src/services/postRunCoachingService';
 import { UserProfile, Workout } from '../src/types';
 import { FREE_TRIAL_DAYS, FREE_TRIAL_LABEL, isTrialCheckout, normalizeBillingPlanId } from '../src/config/billing';
 
@@ -134,6 +134,9 @@ assert(coachPrompt.includes('Coach calculations'), 'post-run AI prompt should in
 const coachFallback = buildPostRunCoachFallback(generatedPlans[0][0], gpsRun);
 assert(coachFallback.includes('GPS measured'), 'fallback coach insight should use measured run source');
 assert(!coachFallback.toLowerCase().includes('great job'), 'fallback coach insight should avoid generic praise');
+const coachFallbackData = buildPostRunCoachFallbackData(generatedPlans[0][0], gpsRun);
+assert(coachFallbackData.coachingPoints.length >= 2, 'fallback coach insight should include structured coaching points');
+assert(coachFallbackData.nextWorkoutAdjustment.reason.length > 0, 'fallback coach insight should include next workout reasoning');
 assert(getActualDistance({ ...generatedPlans[0][0], status: 'completed', result: {
   completedAt: new Date().toISOString(),
   actualDistance: gpsRun.distance,

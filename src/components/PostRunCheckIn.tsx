@@ -7,7 +7,8 @@ import { AIServiceError, getCachedAIResponse } from '../services/geminiService';
 import { buildFeedbackReward } from '../services/feedbackRewardService';
 import { getWorkoutReadyingPreview } from '../services/marathonReadyingService';
 import { formatPace, getMeasurementLabel } from '../services/runMetricsService';
-import { buildPostRunCoachFallback, buildPostRunCoachPrompt } from '../services/postRunCoachingService';
+import type { CoachInsight, RecommendedAction, RiskLevel } from '../services/coachInsightService';
+import { buildPostRunCoachFallbackData, buildPostRunCoachPrompt } from '../services/postRunCoachingService';
 
 interface PostRunCheckInProps {
   workout: Workout;
@@ -15,12 +16,34 @@ interface PostRunCheckInProps {
   onComplete: (result: WorkoutResult) => void;
 }
 
+const actionLabels: Record<RecommendedAction, string> = {
+  continue_plan: 'Continue Plan',
+  reduce_intensity: 'Reduce Intensity',
+  rest: 'Rest',
+  repeat_workout: 'Repeat Workout',
+  increase_carefully: 'Increase Carefully',
+};
+
+const riskLabels: Record<RiskLevel, string> = {
+  low: 'Low Risk',
+  medium: 'Medium Risk',
+  high: 'High Risk',
+};
+
+const riskClasses: Record<RiskLevel, string> = {
+  low: 'bg-green-400/10 text-green-200 border-green-400/20',
+  medium: 'bg-yellow-400/10 text-yellow-200 border-yellow-400/20',
+  high: 'bg-red-400/10 text-red-200 border-red-400/20',
+};
+
 export default function PostRunCheckIn({ workout, liveData, onComplete }: PostRunCheckInProps) {
   const [effort, setEffort] = useState(5);
   const [notes, setNotes] = useState('');
   const [actualDistance, setActualDistance] = useState(liveData?.distance ?? 0);
   const [actualDuration, setActualDuration] = useState(liveData?.duration ?? 0);
-  const [coachOpinion, setCoachOpinion] = useState<string | null>(null);
+  const [coachOpinion, setCoachOpinion] = useState<CoachInsight | null>(null);
+  const [coachLimitMessage, setCoachLimitMessage] = useState<string | null>(null);
+  const [coachLimitCta, setCoachLimitCta] = useState<string | null>(null);
   const [isGeneratingOpinion, setIsGeneratingOpinion] = useState(false);
   const isMeasuredRun = Boolean(liveData);
   const measurementLabel = getMeasurementLabel(liveData?.measurementSource);
@@ -43,8 +66,10 @@ export default function PostRunCheckIn({ workout, liveData, onComplete }: PostRu
     const getCoachOpinion = async () => {
       if (!liveData) return;
       
-      const fallbackInsight = buildPostRunCoachFallback(workout, liveData);
+      const fallbackInsight = buildPostRunCoachFallbackData(workout, liveData);
       setIsGeneratingOpinion(true);
+      setCoachLimitMessage(null);
+      setCoachLimitCta(null);
       try {
         const prompt = buildPostRunCoachPrompt(workout, liveData);
         const recentWorkoutSummary = [
@@ -61,7 +86,8 @@ export default function PostRunCheckIn({ workout, liveData, onComplete }: PostRu
         ].join('|');
 
         const response = await getCachedAIResponse(prompt, 'gemini-1.5-flash', {
-          fallbackText: fallbackInsight,
+          fallbackText: fallbackInsight.summary,
+          fallbackData: fallbackInsight,
           cacheContext: {
             questionType: 'post_run_feedback',
             todayWorkoutId: workout.id,
@@ -69,11 +95,13 @@ export default function PostRunCheckIn({ workout, liveData, onComplete }: PostRu
           },
         });
 
-        setCoachOpinion(response.text || fallbackInsight);
+        setCoachOpinion(response.data || fallbackInsight);
       } catch (err) {
         console.error("Failed to get coach opinion:", err);
         if (err instanceof AIServiceError && (err.code === 'AI_FREE_LIMIT_REACHED' || err.code === 'AI_DAILY_LIMIT_REACHED')) {
-          setCoachOpinion(`${fallbackInsight} ${err.message}`);
+          setCoachOpinion(fallbackInsight);
+          setCoachLimitMessage(err.message);
+          setCoachLimitCta(err.cta || (err.upgradeRequired ? 'Start a trial or choose a plan to keep using AI coaching.' : null));
         } else {
           setCoachOpinion(fallbackInsight);
         }
@@ -242,16 +270,73 @@ export default function PostRunCheckIn({ workout, liveData, onComplete }: PostRu
                 <div className="w-6 h-6 border-2 border-zinc-100 border-t-transparent rounded-full animate-spin" />
                 <p className="text-[10px] text-zinc-500 uppercase tracking-widest animate-pulse">Analyzing your performance...</p>
               </div>
+            ) : coachOpinion ? (
+              <div className="space-y-4">
+                {coachLimitMessage && (
+                  <div className="rounded-2xl border border-yellow-400/20 bg-yellow-400/10 p-3 text-xs leading-relaxed text-yellow-100">
+                    <p>{coachLimitMessage} The deterministic coaching read is shown below.</p>
+                    {coachLimitCta && (
+                      <p className="mt-2 font-semibold">{coachLimitCta}</p>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-2">
+                  <span className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-zinc-200">
+                    {actionLabels[coachOpinion.recommendedAction]}
+                  </span>
+                  <span className={cn(
+                    'rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-widest',
+                    riskClasses[coachOpinion.riskLevel],
+                  )}>
+                    {riskLabels[coachOpinion.riskLevel]}
+                  </span>
+                </div>
+
+                <p className="text-sm text-zinc-100 leading-relaxed">
+                  {coachOpinion.summary}
+                </p>
+
+                <div className="rounded-2xl bg-zinc-950/60 p-4">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Readiness</div>
+                  <p className="mt-2 text-xs leading-relaxed text-zinc-300">
+                    {coachOpinion.readinessMessage}
+                  </p>
+                </div>
+
+                <ul className="space-y-2">
+                  {coachOpinion.coachingPoints.map((point, index) => (
+                    <li key={`${point}-${index}`} className="flex gap-3 text-xs leading-relaxed text-zinc-300">
+                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-500" />
+                      <span>{point}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <div className="rounded-2xl border border-zinc-800 bg-zinc-950/40 p-4">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Next Workout</div>
+                  <p className="mt-2 text-xs leading-relaxed text-zinc-300">
+                    {coachOpinion.nextWorkoutAdjustment.reason}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center">
+                    <Info size={12} className="text-zinc-500" />
+                  </div>
+                  <span className="text-[10px] text-zinc-500 uppercase tracking-widest">AI Coaching Insights</span>
+                </div>
+              </div>
             ) : (
               <div className="space-y-3">
-                <p className="text-sm italic text-zinc-300 leading-relaxed">
-                  "{coachOpinion}"
+                <p className="text-sm text-zinc-400 leading-relaxed">
+                  Save a measured run to get a specific coaching read for distance, duration, pace, and next-session adjustment.
                 </p>
                 <div className="flex items-center gap-2 pt-2">
                   <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center">
                     <Info size={12} className="text-zinc-500" />
                   </div>
-                  <span className="text-[10px] text-zinc-500 uppercase tracking-widest">AI Coaching Insights</span>
+                  <span className="text-[10px] text-zinc-500 uppercase tracking-widest">Structured Coaching</span>
                 </div>
               </div>
             )}

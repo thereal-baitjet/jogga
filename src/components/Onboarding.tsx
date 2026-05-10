@@ -23,6 +23,9 @@ const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export default function Onboarding({ onComplete }: OnboardingProps) {
   const [step, setStep] = useState(0);
+  const [startedAt] = useState(() => Date.now());
+  const [botTrap, setBotTrap] = useState('');
+  const [botTrapError, setBotTrapError] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<UserProfile>>({
     name: '',
     experienceLevel: 'beginner',
@@ -41,6 +44,17 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
   };
 
   const handleComplete = () => {
+    if (botTrap.trim().length > 0) {
+      setBotTrapError('Unable to generate the plan. Refresh and try again.');
+      return;
+    }
+
+    if (Date.now() - startedAt < 1500) {
+      setBotTrapError('Please wait a moment before generating the plan.');
+      return;
+    }
+
+    setBotTrapError(null);
     onComplete(formData as UserProfile);
   };
 
@@ -242,6 +256,19 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       </div>
 
       <div className="flex-1 flex flex-col p-8 pt-12">
+        <div className="absolute left-[-9999px] top-auto h-px w-px overflow-hidden" aria-hidden="true">
+          <label htmlFor="jogga-company">Company</label>
+          <input
+            id="jogga-company"
+            name="company"
+            type="text"
+            value={botTrap}
+            onChange={(event) => setBotTrap(event.target.value)}
+            tabIndex={-1}
+            autoComplete="off"
+          />
+        </div>
+
         <AnimatePresence mode="wait">
           <motion.div
             key={step}
@@ -264,6 +291,12 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             </div>
           </motion.div>
         </AnimatePresence>
+
+        {botTrapError && (
+          <p role="alert" className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs text-red-200">
+            {botTrapError}
+          </p>
+        )}
 
         <div className="pt-8 flex items-center gap-4">
           {step > 0 && (

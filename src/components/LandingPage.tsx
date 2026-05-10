@@ -5,6 +5,7 @@ import { signInWithRedirect } from 'firebase/auth';
 import { auth, authPersistenceReady, googleProvider } from '../firebase';
 import { BILLING_PLANS, CHECKOUT_INTENT_STORAGE_KEY, CheckoutIntent, FREE_TRIAL_LABEL, PlanId } from '../config/billing';
 import { trackEvent } from '../services/analyticsService';
+import { getBotChallengeToken, isBotProtectionConfigured, verifyBotChallenge } from '../services/botProtectionService';
 
 interface LandingPageProps {
   onStart: (intent: CheckoutIntent) => void;
@@ -77,6 +78,7 @@ const trainingGuides = [
 
 export default function LandingPage({ onStart, authError }: LandingPageProps) {
   const [loadingSource, setLoadingSource] = useState<string | null>(null);
+  const [loadingPhase, setLoadingPhase] = useState<'checking' | 'google' | null>(null);
   const [localAuthError, setLocalAuthError] = useState<string | null>(null);
 
   const getRedirectTimeoutError = () => (
@@ -104,18 +106,25 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
 
     const intent = { planId, trial, source };
     trackEvent('landing_cta_clicked', intent);
-    persistCheckoutIntent(intent);
-
     const currentUser = auth.currentUser;
     if (currentUser) {
+      persistCheckoutIntent(intent);
       onStart(intent);
       return;
     }
 
     setLocalAuthError(null);
     setLoadingSource(source);
+    setLoadingPhase('checking');
 
     try {
+      const botAction = source.replace(/[^a-z0-9_-]/gi, '_').slice(0, 32) || 'start';
+      const challengeToken = await getBotChallengeToken(botAction);
+      await verifyBotChallenge(challengeToken, botAction);
+      trackEvent('landing_bot_verified', { source, configured: isBotProtectionConfigured() });
+
+      persistCheckoutIntent(intent);
+      setLoadingPhase('google');
       await authPersistenceReady;
       googleProvider.setCustomParameters({ prompt: 'select_account' });
 
@@ -132,18 +141,24 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
       window.setTimeout(() => {
         if (document.visibilityState === 'visible') {
           setLoadingSource(null);
+          setLoadingPhase(null);
           setLocalAuthError('Google sign-in did not leave this page. Refresh and try again.');
         }
       }, 4000);
     } catch (error) {
       console.error('Redirect login failed', error);
       setLoadingSource(null);
+      setLoadingPhase(null);
       setLocalAuthError(error instanceof Error ? error.message : 'Google sign-in could not start. Try again.');
     }
   };
 
   const getButtonText = (source: string, fallback: string) => (
-    loadingSource === source ? 'Opening Google...' : fallback
+    loadingSource === source
+      ? loadingPhase === 'checking'
+        ? 'Checking...'
+        : 'Opening Google...'
+      : fallback
   );
 
   const handleVideoPlay = (videoId: string) => {
@@ -241,6 +256,12 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
             {(localAuthError || authError) && (
               <p role="alert" className="max-w-lg rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
                 {localAuthError || authError}
+              </p>
+            )}
+
+            {isBotProtectionConfigured() && (
+              <p className="max-w-lg text-xs leading-5 text-zinc-600">
+                Protected by silent bot verification before Google sign-in.
               </p>
             )}
 
@@ -386,8 +407,8 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
             <a href="/5k-training-plan" className="transition hover:text-zinc-100">Training Plans</a>
             <a href="/beginner-running-plan" className="transition hover:text-zinc-100">Beginner Running</a>
             <a href="/marathon-training-plan" className="transition hover:text-zinc-100">5K / 10K / Marathon</a>
-            <a href="/#privacy" className="transition hover:text-zinc-100">Privacy</a>
-            <a href="/#terms" className="transition hover:text-zinc-100">Terms</a>
+            <a href="/privacy" className="transition hover:text-zinc-100">Privacy</a>
+            <a href="/terms" className="transition hover:text-zinc-100">Terms</a>
           </nav>
         </div>
       </footer>

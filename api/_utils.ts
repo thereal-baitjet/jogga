@@ -4,6 +4,12 @@ import { GoogleGenAI, Modality } from "@google/genai";
 import Stripe from "stripe";
 import { getFirebaseAdminDb } from "./firebase-admin.js";
 import { normalizeBillingPlanId } from "../src/config/billing.js";
+import {
+  COACH_INSIGHT_SCHEMA_VERSION,
+  createFallbackCoachInsight,
+  validateCoachInsight,
+  type CoachInsight,
+} from "../src/services/coachInsightService.js";
 
 export const APP_URL = process.env.APP_URL || "https://jogga.santosautomation.com";
 export const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
@@ -26,6 +32,11 @@ const FREE_COACH_LIFETIME_LIMIT = 3;
 const PAID_COACH_DAILY_LIMIT = 10;
 const COACH_RESPONSE_MAX_WORDS = 180;
 const COACH_OUTPUT_INSTRUCTION = `\n\nHard limit: respond in ${COACH_RESPONSE_MAX_WORDS} words or fewer.`;
+const COACH_JSON_OUTPUT_INSTRUCTION = [
+  "Return only valid JSON matching the requested schema.",
+  "Do not include markdown, backticks, explanations, or extra keys.",
+  "Do not include text before or after the JSON object.",
+].join(" ");
 
 let stripeClient: Stripe | null = null;
 let geminiClient: GoogleGenAI | null = null;
@@ -46,6 +57,8 @@ type AiAccessTier = "free" | "paid";
 interface CoachTextResponse {
   text: string;
   provider: string;
+  data: CoachInsight;
+  schemaVersion: string;
   cached?: boolean;
   fallback?: boolean;
 }
@@ -125,7 +138,9 @@ function extractOpenAIText(data: any) {
   return "";
 }
 
-async function generateOpenAIText(prompt: string, model = OPENAI_TEXT_MODEL) {
+type CoachResponseFormat = "text" | "json";
+
+async function generateOpenAIText(prompt: string, model = OPENAI_TEXT_MODEL, maxOutputTokens = 320) {
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -135,7 +150,7 @@ async function generateOpenAIText(prompt: string, model = OPENAI_TEXT_MODEL) {
     body: JSON.stringify({
       model,
       input: prompt,
-      max_output_tokens: 320,
+      max_output_tokens: maxOutputTokens,
     }),
   });
   const data = await response.json();
@@ -172,8 +187,14 @@ async function generateOpenAIAudio(text: string, voice: unknown) {
   return Buffer.from(await response.arrayBuffer()).toString("base64");
 }
 
-export async function generateCoachText(prompt: string, model?: string) {
-  const limitedPrompt = appendCoachOutputInstruction(prompt);
+export async function generateCoachText(
+  prompt: string,
+  model?: string,
+  options: { responseFormat?: CoachResponseFormat } = {},
+) {
+  const responseFormat = options.responseFormat || "text";
+  const limitedPrompt = appendCoachOutputInstruction(prompt, responseFormat);
+  const maxOutputTokens = responseFormat === "json" ? 450 : 320;
 
   if (GEMINI_API_KEY) {
     try {
@@ -181,11 +202,16 @@ export async function generateCoachText(prompt: string, model?: string) {
         model: model || "gemini-1.5-flash",
         contents: limitedPrompt,
         config: {
-          maxOutputTokens: 320,
+          maxOutputTokens,
+          ...(responseFormat === "json" ? { responseMimeType: "application/json" } : {}),
         },
       });
 
-      return { text: limitCoachWords(response.text || ""), provider: "gemini" };
+      const text = (response.text || "").trim();
+      return {
+        text: responseFormat === "json" ? text : limitCoachWords(text),
+        provider: "gemini",
+      };
     } catch (error) {
       console.error("Gemini text generation failed, falling back to OpenAI:", error);
       if (!hasOpenAIProvider()) throw createHttpError(502, "AI provider request failed.");
@@ -193,7 +219,11 @@ export async function generateCoachText(prompt: string, model?: string) {
   }
 
   if (hasOpenAIProvider()) {
-    return { text: limitCoachWords(await generateOpenAIText(limitedPrompt)), provider: "openai" };
+    const text = (await generateOpenAIText(limitedPrompt, OPENAI_TEXT_MODEL, maxOutputTokens)).trim();
+    return {
+      text: responseFormat === "json" ? text : limitCoachWords(text),
+      provider: "openai",
+    };
   }
 
   throw createHttpError(503, "No AI provider configured. Set GEMINI_API_KEY or OPENAI_API_KEY.");
@@ -324,6 +354,7 @@ export function sendError(res: any, error: any) {
     error: message,
     ...(typeof error?.code === "string" ? { code: error.code } : {}),
     ...(typeof error?.upgradeRequired === "boolean" ? { upgradeRequired: error.upgradeRequired } : {}),
+    ...(error?.upgradeRequired ? { cta: "Start a trial or choose a plan to keep using AI coaching." } : {}),
     ...(typeof error?.retryAfterSeconds === "number" ? { retryAfterSeconds: error.retryAfterSeconds } : {}),
   });
 }
@@ -469,8 +500,17 @@ export async function requireAiAccess(
   return { user, subscription };
 }
 
-function appendCoachOutputInstruction(prompt: string) {
-  return prompt.includes(`${COACH_RESPONSE_MAX_WORDS} words`) ? prompt : `${prompt.trim()}${COACH_OUTPUT_INSTRUCTION}`;
+function appendCoachOutputInstruction(prompt: string, responseFormat: CoachResponseFormat = "text") {
+  const trimmedPrompt = prompt.trim();
+  if (responseFormat === "json") {
+    return trimmedPrompt.includes("Return only valid JSON")
+      ? trimmedPrompt
+      : `${trimmedPrompt}\n\n${COACH_JSON_OUTPUT_INSTRUCTION}`;
+  }
+
+  return trimmedPrompt.includes(`${COACH_RESPONSE_MAX_WORDS} words`)
+    ? trimmedPrompt
+    : `${trimmedPrompt}${COACH_OUTPUT_INSTRUCTION}`;
 }
 
 function limitCoachWords(text: string, maxWords = COACH_RESPONSE_MAX_WORDS) {
@@ -525,12 +565,13 @@ function buildCoachCacheContext(body: any, prompt: string): CoachCacheContext {
 
 function buildCoachCacheKey(userId: string, model: string, context: CoachCacheContext) {
   return hashValue(JSON.stringify({
+    schema_version: COACH_INSIGHT_SCHEMA_VERSION,
     userId,
     model,
     question_type: context.questionType,
     readiness_score: context.readinessScore,
     today_workout_id: context.todayWorkoutId,
-    recent_workout_summary: context.recentWorkoutSummary,
+    recent_workout_summary_hash: hashValue(context.recentWorkoutSummary),
   }));
 }
 
@@ -645,7 +686,12 @@ async function enforceCoachUsageLimit(userId: string, tier: AiAccessTier) {
 async function getCachedCoachResponse(cacheKey: string) {
   const now = Date.now();
   const memoryEntry = coachResponseCache.get(cacheKey);
-  if (memoryEntry && memoryEntry.expiresAt > now) {
+  if (
+    memoryEntry &&
+    memoryEntry.expiresAt > now &&
+    memoryEntry.response.schemaVersion === COACH_INSIGHT_SCHEMA_VERSION &&
+    validateCoachInsight(memoryEntry.response.data)
+  ) {
     return { ...memoryEntry.response, cached: true };
   }
 
@@ -653,11 +699,18 @@ async function getCachedCoachResponse(cacheKey: string) {
     const cacheSnap = await getFirebaseAdminDb().collection("aiResponseCache").doc(cacheKey).get();
     const cacheData = cacheSnap.exists ? cacheSnap.data() : null;
     const expiresAt = typeof cacheData?.expiresAt === "number" ? cacheData.expiresAt : 0;
-    const text = typeof cacheData?.text === "string" ? cacheData.text : "";
     const provider = typeof cacheData?.provider === "string" ? cacheData.provider : "cache";
+    const data = validateCoachInsight(cacheData?.data);
+    const schemaVersion = typeof cacheData?.schemaVersion === "string" ? cacheData.schemaVersion : "";
 
-    if (expiresAt > now && text) {
-      const response = { text, provider, cached: true };
+    if (expiresAt > now && data && schemaVersion === COACH_INSIGHT_SCHEMA_VERSION) {
+      const response = {
+        text: data.summary,
+        provider,
+        data,
+        schemaVersion: COACH_INSIGHT_SCHEMA_VERSION,
+        cached: true,
+      };
       coachResponseCache.set(cacheKey, { expiresAt, response });
       return response;
     }
@@ -671,9 +724,14 @@ async function getCachedCoachResponse(cacheKey: string) {
 
 async function cacheCoachResponse(cacheKey: string, response: CoachTextResponse) {
   const expiresAt = Date.now() + AI_CACHE_DURATION_MS;
+  const data = validateCoachInsight(response.data);
+  if (!data) return;
+
   const cacheableResponse = {
-    text: limitCoachWords(response.text),
+    text: data.summary,
     provider: response.provider,
+    data,
+    schemaVersion: COACH_INSIGHT_SCHEMA_VERSION,
   };
 
   coachResponseCache.set(cacheKey, { expiresAt, response: cacheableResponse });
@@ -689,30 +747,83 @@ async function cacheCoachResponse(cacheKey: string, response: CoachTextResponse)
   }
 }
 
+function parseStrictCoachJson(text: string) {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+}
+
+function buildCoachTextResponse(data: CoachInsight, provider: string, options: { fallback?: boolean } = {}): CoachTextResponse {
+  return {
+    text: data.summary,
+    provider,
+    data,
+    schemaVersion: COACH_INSIGHT_SCHEMA_VERSION,
+    ...(options.fallback ? { fallback: true } : {}),
+  };
+}
+
+function getFallbackData(body: any) {
+  return validateCoachInsight(body?.fallbackData ?? body?.fallback_data);
+}
+
 function buildDeterministicCoachResponse(body: any, context: CoachCacheContext): CoachTextResponse {
+  const fallbackData = getFallbackData(body);
+  if (fallbackData) {
+    return buildCoachTextResponse(fallbackData, "deterministic", { fallback: true });
+  }
+
   const fallbackText = body?.fallbackText ?? body?.fallback_text;
   if (typeof fallbackText === "string" && fallbackText.trim().length > 0) {
-    return {
-      text: limitCoachWords(fallbackText),
-      provider: "deterministic",
-      fallback: true,
-    };
+    return buildCoachTextResponse(
+      createFallbackCoachInsight(limitCoachWords(fallbackText), {
+        confidence: 0.58,
+      }),
+      "deterministic",
+      { fallback: true }
+    );
   }
 
   const readiness = context.readinessScore !== "none" ? Number(context.readinessScore) : null;
   const readinessAdvice = Number.isFinite(readiness)
     ? readiness! >= 75
-      ? "Your readiness is high, so keep the planned work controlled and do not add extra volume just because you feel good."
+      ? "Readiness is high; keep the planned work controlled and avoid adding extra volume just because you feel good."
       : readiness! <= 45
-        ? "Your readiness is low, so shorten the session or keep it very easy until the next check-in."
-        : "Your readiness is moderate, so stay with the plan and keep the effort repeatable."
+        ? "Readiness is low; shorten the session or keep it very easy until the next check-in."
+        : "Readiness is moderate; stay with the plan and keep the effort repeatable."
     : "Use the measured run data first, keep the next session controlled, and protect recovery before adding intensity.";
+  const recommendedAction = Number.isFinite(readiness) && readiness! <= 45 ? "reduce_intensity" : "continue_plan";
 
-  return {
-    text: limitCoachWords(`${readinessAdvice} If this was a post-run check-in, judge the day by distance, duration, pace, and how well the session matched its purpose. The next best move is steady consistency, not forcing missed fitness into one run.`),
-    provider: "deterministic",
-    fallback: true,
-  };
+  return buildCoachTextResponse(
+    createFallbackCoachInsight(
+      `${readinessAdvice} Judge the day by distance, duration, pace, and how well the session matched its purpose.`,
+      {
+        readinessMessage: readinessAdvice,
+        recommendedAction,
+        coachingPoints: [
+          "Compare the completed distance, duration, and pace to the planned purpose.",
+          "Do not force missed fitness into one run; let the next session rebuild rhythm.",
+        ],
+        riskLevel: recommendedAction === "reduce_intensity" ? "medium" : "low",
+        confidence: 0.6,
+        nextWorkoutAdjustment: {
+          adjustmentType: recommendedAction === "reduce_intensity" ? "easier" : "none",
+          reason: recommendedAction === "reduce_intensity"
+            ? "Lower readiness means the next session should protect recovery before chasing pace."
+            : "No strong signal requires a plan change from the available data.",
+        },
+      }
+    ),
+    "deterministic",
+    { fallback: true }
+  );
 }
 
 export async function createCoachOpinionResponse(req: any, body: any) {
@@ -741,12 +852,29 @@ export async function createCoachOpinionResponse(req: any, body: any) {
       tier: access.tier,
       subscriptionId: access.subscription?.id || null,
       questionType: context.questionType,
+      schemaVersion: cachedResponse.schemaVersion,
     });
     return cachedResponse;
   }
 
   try {
-    const response = await generateCoachText(prompt, modelName);
+    const providerResponse = await generateCoachText(prompt, modelName, { responseFormat: "json" });
+    const parsed = parseStrictCoachJson(providerResponse.text);
+    const data = validateCoachInsight(parsed);
+
+    if (!data) {
+      console.warn("Invalid AI coach JSON; using deterministic fallback", {
+        userId: access.user.uid,
+        eventType: "coach-opinion",
+        provider: providerResponse.provider,
+        questionType: context.questionType,
+        responseChars: providerResponse.text.length,
+      });
+
+      return buildDeterministicCoachResponse(body, context);
+    }
+
+    const response = buildCoachTextResponse(data, providerResponse.provider);
     await cacheCoachResponse(cacheKey, response);
 
     console.info("AI coach response generated", {
@@ -756,6 +884,7 @@ export async function createCoachOpinionResponse(req: any, body: any) {
       subscriptionId: access.subscription?.id || null,
       provider: response.provider,
       questionType: context.questionType,
+      schemaVersion: response.schemaVersion,
     });
 
     return { ...response, cached: false };
