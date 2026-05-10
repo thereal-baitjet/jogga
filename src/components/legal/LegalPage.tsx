@@ -2,8 +2,6 @@ import React from 'react';
 import { ArrowRight, Home, Scale, ShieldCheck } from 'lucide-react';
 import {
   buildLegalCanonicalUrl,
-  LEGAL_META_DESCRIPTION,
-  LEGAL_META_TITLE,
   LEGAL_PAGES,
   LegalPageContent,
 } from './legalPages';
@@ -26,17 +24,17 @@ function useLegalMetadata(page: LegalPageContent) {
   React.useEffect(() => {
     const canonicalUrl = buildLegalCanonicalUrl(page);
 
-    document.title = LEGAL_META_TITLE;
-    upsertMeta('meta[name="description"]', { name: 'description', content: LEGAL_META_DESCRIPTION });
-    upsertMeta('meta[property="og:title"]', { property: 'og:title', content: LEGAL_META_TITLE });
-    upsertMeta('meta[property="og:description"]', { property: 'og:description', content: LEGAL_META_DESCRIPTION });
+    document.title = page.title;
+    upsertMeta('meta[name="description"]', { name: 'description', content: page.description });
+    upsertMeta('meta[property="og:title"]', { property: 'og:title', content: page.title });
+    upsertMeta('meta[property="og:description"]', { property: 'og:description', content: page.description });
     upsertMeta('meta[property="og:type"]', { property: 'og:type', content: 'website' });
     upsertMeta('meta[property="og:url"]', { property: 'og:url', content: canonicalUrl });
     upsertMeta('meta[property="og:site_name"]', { property: 'og:site_name', content: 'Jogga' });
     upsertMeta('meta[property="og:image"]', { property: 'og:image', content: `${SITE_URL}/mainLogo.png` });
     upsertMeta('meta[name="twitter:card"]', { name: 'twitter:card', content: 'summary_large_image' });
-    upsertMeta('meta[name="twitter:title"]', { name: 'twitter:title', content: LEGAL_META_TITLE });
-    upsertMeta('meta[name="twitter:description"]', { name: 'twitter:description', content: LEGAL_META_DESCRIPTION });
+    upsertMeta('meta[name="twitter:title"]', { name: 'twitter:title', content: page.title });
+    upsertMeta('meta[name="twitter:description"]', { name: 'twitter:description', content: page.description });
 
     let canonical = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
     if (!canonical) {

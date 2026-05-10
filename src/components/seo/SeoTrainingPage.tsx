@@ -1,6 +1,6 @@
 import React from 'react';
 import { ArrowRight, Check, Dumbbell, Home, Route, ShieldCheck, Sparkles } from 'lucide-react';
-import { DEFAULT_META_DESCRIPTION, DEFAULT_META_TITLE, SEO_PAGES, SeoPageContent, SITE_URL } from './seoPages';
+import { SEO_PAGES, SeoPageContent, SITE_URL } from './seoPages';
 
 function upsertMeta(selector: string, attributes: Record<string, string>) {
   let element = document.head.querySelector<HTMLMetaElement>(selector);
@@ -19,17 +19,17 @@ function useSeoMetadata(page: SeoPageContent) {
   React.useEffect(() => {
     const canonicalUrl = `${SITE_URL}${page.path}`;
 
-    document.title = DEFAULT_META_TITLE;
-    upsertMeta('meta[name="description"]', { name: 'description', content: DEFAULT_META_DESCRIPTION });
-    upsertMeta('meta[property="og:title"]', { property: 'og:title', content: DEFAULT_META_TITLE });
-    upsertMeta('meta[property="og:description"]', { property: 'og:description', content: DEFAULT_META_DESCRIPTION });
+    document.title = page.title;
+    upsertMeta('meta[name="description"]', { name: 'description', content: page.description });
+    upsertMeta('meta[property="og:title"]', { property: 'og:title', content: page.title });
+    upsertMeta('meta[property="og:description"]', { property: 'og:description', content: page.description });
     upsertMeta('meta[property="og:type"]', { property: 'og:type', content: 'website' });
     upsertMeta('meta[property="og:url"]', { property: 'og:url', content: canonicalUrl });
     upsertMeta('meta[property="og:site_name"]', { property: 'og:site_name', content: 'Jogga' });
     upsertMeta('meta[property="og:image"]', { property: 'og:image', content: `${SITE_URL}/mainLogo.png` });
     upsertMeta('meta[name="twitter:card"]', { name: 'twitter:card', content: 'summary_large_image' });
-    upsertMeta('meta[name="twitter:title"]', { name: 'twitter:title', content: DEFAULT_META_TITLE });
-    upsertMeta('meta[name="twitter:description"]', { name: 'twitter:description', content: DEFAULT_META_DESCRIPTION });
+    upsertMeta('meta[name="twitter:title"]', { name: 'twitter:title', content: page.title });
+    upsertMeta('meta[name="twitter:description"]', { name: 'twitter:description', content: page.description });
 
     let canonical = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
     if (!canonical) {
@@ -182,10 +182,10 @@ export function SeoTrainingPage({ page }: { page: SeoPageContent }) {
 
           <aside className="grid gap-3 self-center">
             {[
-              'Adaptive plan generation',
+              'Adapts after missed runs',
+              'Affordable founder pricing',
               'GPS-based run feedback',
-              'Readiness-aware training',
-              'Beginner to marathon support',
+              'Built for real schedules',
             ].map((item) => (
               <div key={item} className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/70 p-4">
                 <Check size={18} className="shrink-0 text-green-300" />
@@ -198,9 +198,9 @@ export function SeoTrainingPage({ page }: { page: SeoPageContent }) {
         <section className="border-y border-zinc-800 bg-zinc-900/35">
           <div className="mx-auto grid max-w-6xl gap-4 px-5 py-8 md:grid-cols-3">
             {[
-              { icon: Route, label: 'Personalized', body: 'Training starts from your goal, schedule, experience, and mileage.' },
-              { icon: ShieldCheck, label: 'Recovery aware', body: 'Jogga keeps rest and readiness part of the plan.' },
-              { icon: Dumbbell, label: 'Built for consistency', body: 'The next workout stays clear even when your week changes.' },
+              { icon: Route, label: 'Adaptive', body: 'Training adjusts when your schedule changes or a workout gets missed.' },
+              { icon: ShieldCheck, label: 'Affordable', body: 'Premium AI running guidance at a price that makes starting easier.' },
+              { icon: Dumbbell, label: 'Built for consistency', body: 'The next workout stays clear without guilt, pressure, or guesswork.' },
             ].map(({ icon: Icon, label, body }) => (
               <div key={label} className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-5">
                 <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-100 text-zinc-950">
@@ -253,9 +253,9 @@ export function SeoTrainingPage({ page }: { page: SeoPageContent }) {
         <section className="px-5 py-12">
           <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-5 rounded-lg border border-yellow-400/25 bg-yellow-400/10 p-6 md:flex-row md:items-center md:p-8">
             <div>
-              <h2 className="text-2xl font-light text-zinc-50">Start with a personalized plan.</h2>
+              <h2 className="text-2xl font-light text-zinc-50">Start with a flexible plan.</h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-300">
-                Create your Jogga profile and let the app build the training plan around your goal.
+                Create your Jogga profile and let the app build an adaptive plan around your goal, schedule, and real life.
               </p>
             </div>
             <StartPlanCta label="Start Your Plan" source={`${page.path.slice(1)}-footer`} />

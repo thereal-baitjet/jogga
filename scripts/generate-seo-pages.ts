@@ -2,12 +2,10 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   buildLegalCanonicalUrl,
-  LEGAL_META_DESCRIPTION,
-  LEGAL_META_TITLE,
   LEGAL_PAGES,
   LegalPageContent,
 } from '../src/components/legal/legalPages';
-import { DEFAULT_META_DESCRIPTION, DEFAULT_META_TITLE, SEO_PAGES, SeoPageContent, SITE_URL } from '../src/components/seo/seoPages';
+import { SEO_PAGES, SeoPageContent, SITE_URL } from '../src/components/seo/seoPages';
 
 function escapeHtml(value: string) {
   return value
@@ -66,8 +64,8 @@ function buildJsonLd(page: SeoPageContent) {
 
 function injectSeoHead(template: string, page: SeoPageContent) {
   const canonicalUrl = `${SITE_URL}${page.path}`;
-  const title = escapeHtml(DEFAULT_META_TITLE);
-  const description = escapeHtml(DEFAULT_META_DESCRIPTION);
+  const title = escapeHtml(page.title);
+  const description = escapeHtml(page.description);
   const canonical = escapeHtml(canonicalUrl);
   const image = `${SITE_URL}/mainLogo.png`;
   const jsonLd = safeJsonLd(buildJsonLd(page));
@@ -120,8 +118,8 @@ function buildLegalJsonLd(page: LegalPageContent) {
 
 function injectLegalHead(template: string, page: LegalPageContent) {
   const canonicalUrl = buildLegalCanonicalUrl(page);
-  const title = escapeHtml(LEGAL_META_TITLE);
-  const description = escapeHtml(LEGAL_META_DESCRIPTION);
+  const title = escapeHtml(page.title);
+  const description = escapeHtml(page.description);
   const canonical = escapeHtml(canonicalUrl);
   const image = `${SITE_URL}/mainLogo.png`;
   const jsonLd = safeJsonLd(buildLegalJsonLd(page));

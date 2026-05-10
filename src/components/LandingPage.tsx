@@ -13,16 +13,57 @@ interface LandingPageProps {
 }
 
 const outcomes = [
-  'A plan that updates around today, missed runs, and your goal date',
-  'GPS-based run feedback, pace, distance, and post-run coaching',
-  'Readiness and streak signals that tell you when to push or back off',
+  'Miss a run? Jogga recalculates instead of making you feel behind.',
+  'Low energy? The plan can shift intensity so momentum stays intact.',
+  'Busy week? Keep progressing without overpaying for rigid coaching.',
 ];
 
 const proofStats = [
   { value: '3 days', label: 'Free trial' },
-  { value: '$5.99', label: 'Monthly' },
-  { value: '$34.99', label: 'Annual' },
+  { value: 'Cancel', label: 'Anytime' },
+  { value: '50%', label: 'Founder offer' },
 ];
+
+const trustPoints = [
+  'Adaptive AI Training',
+  'Built For Real People',
+  'Google Fit Integration',
+  'Beginner To Advanced',
+  '3-Day Free Trial',
+  'Cancel Anytime',
+];
+
+const solutionFeatures = [
+  'Miss a run? Jogga recalculates.',
+  'Feeling fatigued? Jogga adapts intensity.',
+  'Unexpected busy week? Jogga keeps you progressing without burning out.',
+];
+
+const comparisonRows = [
+  { feature: 'Adaptive AI Plans', jogga: 'Yes', otherApps: 'Yes' },
+  { feature: 'Beginner Friendly', jogga: 'Yes', otherApps: 'Sometimes' },
+  { feature: 'Adjusts Missed Runs', jogga: 'Yes', otherApps: 'Limited' },
+  { feature: 'Affordable Pricing', jogga: 'Yes', otherApps: 'No' },
+  { feature: 'Real-Life Flexibility', jogga: 'Yes', otherApps: 'No' },
+  { feature: 'Founder Pricing', jogga: 'Yes', otherApps: 'No' },
+];
+
+const landingPlanFeatures = {
+  monthly: [
+    'Adaptive AI coaching',
+    'Dynamic training adjustments',
+    'Run tracking',
+    'Goal progression',
+    'Beginner-friendly guidance',
+    'Google Fit integration',
+  ],
+  yearly: [
+    'Everything in Monthly',
+    'Lowest long-term price',
+    'Locked-in early pricing',
+    'Best value for committed runners',
+  ],
+} as const;
 
 const pricingOptions = [
   {
@@ -30,27 +71,37 @@ const pricingOptions = [
     title: 'Free Trial',
     price: FREE_TRIAL_LABEL,
     detail: 'Start today',
+    plan: null,
     planId: 'trial' as PlanId,
     trial: true,
   },
   {
     id: 'monthly',
     title: 'Monthly',
-    price: BILLING_PLANS[0].price,
-    detail: BILLING_PLANS[0].period,
+    plan: BILLING_PLANS[0],
     planId: 'monthly' as PlanId,
     trial: false,
   },
   {
     id: 'yearly',
     title: 'Annual',
-    price: BILLING_PLANS[1].price,
-    detail: BILLING_PLANS[1].period,
+    plan: BILLING_PLANS[1],
     planId: 'yearly' as PlanId,
     trial: false,
     popular: true,
   },
 ];
+
+function getBillingPriceSuffix(planId: PlanId) {
+  if (planId === 'monthly') return '/mo';
+  if (planId === 'yearly') return '/year';
+  return '';
+}
+
+function getPricingCta(planId: PlanId) {
+  if (planId === 'yearly') return 'Go Yearly';
+  return 'Start Free Trial';
+}
 
 const proofVideos = [
   {
@@ -194,15 +245,18 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
           >
             <div className="inline-flex items-center gap-2 rounded-full border border-yellow-400/30 bg-yellow-400/10 px-3 py-2 text-xs font-bold uppercase tracking-widest text-yellow-100">
               <Sparkles size={14} />
-              AI running coach
+              Premium AI running guidance for a fraction of the cost
             </div>
 
             <div className="space-y-5">
               <h1 className="max-w-3xl text-5xl font-light leading-[1.02] tracking-tight text-zinc-50 md:text-7xl">
-                Jogga
+                A Running Coach That Actually Adapts To Your Life
               </h1>
               <p className="max-w-2xl text-xl leading-8 text-zinc-300 md:text-2xl">
-                Turn your next race goal into a daily training plan that adapts to your schedule, your GPS runs, and your recovery.
+                Missed a run? Busy week? Low energy? Jogga adjusts instantly so you keep moving forward without guilt, pressure, or expensive coaching fees.
+              </p>
+              <p className="max-w-xl text-sm font-semibold uppercase tracking-widest text-yellow-100">
+                Premium AI running guidance for a fraction of the cost.
               </p>
             </div>
 
@@ -212,17 +266,25 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
                 disabled={Boolean(loadingSource)}
                 className="flex items-center justify-center gap-2 rounded-full bg-zinc-100 px-6 py-4 text-sm font-bold text-zinc-950 shadow-xl shadow-black/30 transition hover:bg-white active:scale-95 disabled:cursor-wait disabled:opacity-70 sm:whitespace-nowrap"
               >
-                {getButtonText('hero_primary', `Start ${FREE_TRIAL_LABEL}`)}
+                {getButtonText('hero_primary', 'Start Free Trial')}
                 <ChevronRight size={18} />
               </button>
               <a
-                href="#proof"
-                onClick={() => trackEvent('landing_video_anchor_clicked')}
+                href="#how-it-works"
+                onClick={() => trackEvent('landing_how_it_works_clicked')}
                 className="flex items-center justify-center gap-2 rounded-full border border-zinc-700 px-6 py-4 text-sm font-bold text-zinc-100 transition hover:border-zinc-500 hover:bg-zinc-900"
               >
                 <PlayCircle size={18} />
-                Watch Proof
+                See How It Works
               </a>
+            </div>
+
+            <div className="flex max-w-2xl flex-wrap gap-2">
+              {trustPoints.map((point) => (
+                <span key={point} className="rounded-full border border-zinc-800 bg-zinc-900/70 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-zinc-400">
+                  {point}
+                </span>
+              ))}
             </div>
 
             <div className="grid max-w-2xl gap-3 sm:grid-cols-3">
@@ -240,15 +302,44 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
                   <div className="mb-3 flex items-center justify-between gap-2">
                     <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">{option.title}</span>
                     {option.popular && (
-                      <span className="rounded-full bg-yellow-300 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-zinc-950">
-                        Best
+                      <div className="flex flex-wrap justify-end gap-1">
+                        <span className="rounded-full bg-yellow-300 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-zinc-950">
+                          Best
+                        </span>
+                        <span className="rounded-full bg-zinc-100 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-zinc-950">
+                          50% Off
+                        </span>
+                      </div>
+                    )}
+                    {!option.popular && option.plan && (
+                      <span className="rounded-full bg-zinc-100 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-zinc-950">
+                        50% Off
                       </span>
                     )}
                   </div>
-                  <div className="text-lg font-semibold text-zinc-50">{option.price}</div>
-                  <div className="mt-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
-                    {getButtonText(`pricing_${option.id}`, option.detail)}
-                  </div>
+                  {option.plan ? (
+                    <div className="space-y-1">
+                      <div className="text-xs text-zinc-500 line-through">
+                        Normally {option.plan.compareAtPrice}
+                      </div>
+                      <div className="text-xl font-bold text-zinc-50">
+                        Now {option.plan.price}
+                        <span className="text-xs font-semibold text-zinc-400">
+                          {getBillingPriceSuffix(option.planId)}
+                        </span>
+                      </div>
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                        {getButtonText(`pricing_${option.id}`, option.plan.period)}
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="text-lg font-semibold text-zinc-50">{option.price}</div>
+                      <div className="mt-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                        {getButtonText(`pricing_${option.id}`, option.detail)}
+                      </div>
+                    </>
+                  )}
                 </button>
               ))}
             </div>
@@ -307,7 +398,7 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
           </motion.div>
         </section>
 
-        <section className="border-y border-zinc-800 bg-zinc-900/35">
+        <section id="how-it-works" className="border-y border-zinc-800 bg-zinc-900/35">
           <div className="mx-auto grid max-w-6xl gap-4 px-5 py-8 md:grid-cols-3">
             {outcomes.map((outcome, index) => {
               const icons = [Target, Activity, Zap];
@@ -321,6 +412,159 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
                 </div>
               );
             })}
+          </div>
+        </section>
+
+        <section className="mx-auto grid max-w-6xl gap-8 px-5 py-12 md:grid-cols-2 md:py-16">
+          <div className="rounded-[2rem] border border-zinc-800 bg-zinc-900/50 p-6 md:p-8">
+            <div className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-red-200">
+              <Activity size={16} />
+              The old way
+            </div>
+            <h2 className="text-3xl font-light leading-tight text-zinc-50 md:text-4xl">
+              Most Running Apps Expect Perfect Discipline
+            </h2>
+            <p className="mt-5 text-sm leading-7 text-zinc-300">
+              Life does not work like that. You get busy. You miss workouts. You lose momentum. Then most apps make you feel behind. That is where people quit.
+            </p>
+          </div>
+
+          <div className="rounded-[2rem] border border-yellow-400/25 bg-yellow-400/10 p-6 md:p-8">
+            <div className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-yellow-100">
+              <Sparkles size={16} />
+              The Jogga way
+            </div>
+            <h2 className="text-3xl font-light leading-tight text-zinc-50 md:text-4xl">
+              Jogga Adjusts When Life Happens
+            </h2>
+            <p className="mt-5 text-sm leading-7 text-zinc-300">
+              Instead of rigid training plans, Jogga uses adaptive AI coaching that responds to your real-world schedule and performance.
+            </p>
+            <div className="mt-6 space-y-3">
+              {solutionFeatures.map((feature) => (
+                <div key={feature} className="flex items-start gap-3 text-sm leading-6 text-zinc-200">
+                  <Check size={18} className="mt-1 shrink-0 text-green-300" />
+                  <span>{feature}</span>
+                </div>
+              ))}
+            </div>
+            <p className="mt-6 text-sm font-semibold text-yellow-50">
+              This is AI coaching designed for actual humans.
+            </p>
+          </div>
+        </section>
+
+        <section id="pricing" className="border-y border-zinc-800 bg-zinc-900/35">
+          <div className="mx-auto max-w-6xl px-5 py-12 md:py-16">
+            <div className="mb-8 max-w-3xl space-y-3">
+              <div className="text-xs font-bold uppercase tracking-widest text-yellow-100">Founder pricing available now</div>
+              <h2 className="text-3xl font-light leading-tight text-zinc-50 md:text-5xl">
+                Why Pay Premium Prices For Running Plans?
+              </h2>
+              <p className="text-sm leading-7 text-zinc-300 md:text-base">
+                Jogga gives you adaptive AI coaching at a price that makes starting easy.
+              </p>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              {BILLING_PLANS.map((plan) => (
+                <motion.div
+                  key={plan.id}
+                  whileHover={{ y: -3 }}
+                  className={`rounded-[2rem] border p-6 shadow-2xl shadow-black/20 ${
+                    plan.popular
+                      ? 'border-yellow-400/30 bg-yellow-400/10'
+                      : 'border-zinc-800 bg-zinc-950/80'
+                  }`}
+                >
+                  <div className="mb-5 flex items-start justify-between gap-4">
+                    <div>
+                      <div className="mb-2 inline-flex rounded-full bg-zinc-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-zinc-950">
+                        {plan.popular ? 'Best Value' : '50% Off'}
+                      </div>
+                      <h3 className="text-2xl font-semibold text-zinc-50">{plan.shortPeriod}</h3>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs text-zinc-500 line-through">Normally {plan.compareAtPrice}</div>
+                      <div className="mt-1 text-3xl font-bold text-zinc-50">
+                        Now {plan.price}
+                        <span className="text-sm font-semibold text-zinc-400">
+                          {getBillingPriceSuffix(plan.id)}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                        {plan.period}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {landingPlanFeatures[plan.id].map((feature) => (
+                      <div key={feature} className="flex items-center gap-3 text-sm text-zinc-300">
+                        <Check size={16} className="shrink-0 text-green-300" />
+                        {feature}
+                      </div>
+                    ))}
+                  </div>
+
+                  <button
+                    onClick={() => handleStart(`pricing_section_${plan.id}`, plan.id, plan.id === 'monthly')}
+                    disabled={Boolean(loadingSource)}
+                    className={`mt-6 flex w-full items-center justify-center gap-2 rounded-full px-6 py-4 text-sm font-bold transition active:scale-95 disabled:cursor-wait disabled:opacity-70 ${
+                      plan.popular
+                        ? 'bg-zinc-100 text-zinc-950 hover:bg-white'
+                        : 'bg-zinc-800 text-zinc-100 hover:bg-zinc-700'
+                    }`}
+                  >
+                    {getButtonText(`pricing_section_${plan.id}`, getPricingCta(plan.id))}
+                    <ChevronRight size={18} />
+                  </button>
+
+                  <p className="mt-3 text-center text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                    {plan.id === 'monthly' ? 'Cancel anytime.' : 'Founder pricing available now.'}
+                  </p>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="mx-auto max-w-6xl px-5 py-12 md:py-16">
+          <div className="mb-8 max-w-3xl space-y-3">
+            <div className="text-xs font-bold uppercase tracking-widest text-yellow-100">Simple, flexible, affordable</div>
+            <h2 className="text-3xl font-light leading-tight text-zinc-50 md:text-5xl">
+              Jogga vs Expensive Running Apps
+            </h2>
+            <p className="text-sm leading-7 text-zinc-300 md:text-base">
+              Stop overpaying for rigid coaching apps. Jogga gives you the motivation, structure, and adaptability you actually need at a price that makes starting easy.
+            </p>
+          </div>
+
+          <div className="overflow-hidden rounded-[2rem] border border-zinc-800 bg-zinc-900/50">
+            <div className="grid grid-cols-[1.2fr_0.8fr_0.9fr] border-b border-zinc-800 bg-zinc-950/70 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+              <div>Feature</div>
+              <div className="text-center text-zinc-100">Jogga</div>
+              <div className="text-center">Other Apps</div>
+            </div>
+            {comparisonRows.map((row) => (
+              <div key={row.feature} className="grid grid-cols-[1.2fr_0.8fr_0.9fr] items-center border-b border-zinc-800/70 px-4 py-4 last:border-b-0">
+                <div className="text-sm font-medium text-zinc-100">{row.feature}</div>
+                <div className="flex justify-center">
+                  <span className="rounded-full bg-green-400/10 px-3 py-1 text-xs font-bold text-green-200">
+                    {row.jogga}
+                  </span>
+                </div>
+                <div className="flex justify-center">
+                  <span className={`rounded-full px-3 py-1 text-xs font-bold ${
+                    row.otherApps === 'No'
+                      ? 'bg-zinc-800 text-zinc-500'
+                      : 'bg-zinc-800/80 text-zinc-300'
+                  }`}>
+                    {row.otherApps}
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
         </section>
 
@@ -354,19 +598,22 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
           <div className="space-y-4">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-yellow-100">
               <ShieldCheck size={16} className="text-yellow-400" />
-              Built for follow-through
+              Built for real momentum
             </div>
             <h2 className="max-w-xl text-3xl font-light leading-tight text-zinc-50 md:text-5xl">
-              Your plan stays useful because every run feeds the next decision.
+              Running Should Feel Motivating, Not Stressful
             </h2>
+            <p className="max-w-xl text-sm leading-7 text-zinc-300">
+              You do not need perfect discipline. You need momentum. Jogga helps you keep going even when life gets messy. That is how real progress happens.
+            </p>
           </div>
 
           <div className="grid gap-3">
             {[
-              'Onboarding captures the runner goal, schedule, experience, and weekly mileage.',
-              'Stripe unlocks the plan after trial or subscription checkout.',
-              'The dashboard keeps today clear and refreshes upcoming workouts when the plan needs adjustment.',
-              'Completed runs feed GPS distance, pace, duration, and coaching context back into the next recommendation.',
+              'Start with your goal, schedule, experience, and weekly mileage.',
+              'Use GPS runs and feedback to keep the plan grounded in real performance.',
+              'Let the dashboard keep today clear and the next step obvious.',
+              'Keep moving forward without trying to make one missed run define the week.',
             ].map((item) => (
               <div key={item} className="flex items-start gap-3 border-b border-zinc-800 py-4">
                 <Check size={18} className="mt-1 shrink-0 text-green-300" />
@@ -379,9 +626,9 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
         <section className="px-5 pb-12">
           <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-5 rounded-[2rem] border border-yellow-400/25 bg-yellow-400/10 p-6 md:flex-row md:items-center md:p-8">
             <div>
-              <h2 className="text-2xl font-light text-zinc-50">Start with the 3-day trial.</h2>
+              <h2 className="text-2xl font-light text-zinc-50">Start your first run.</h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-300">
-                Get the plan, run with GPS, and see the coaching loop before committing.
+                3-Day Free Trial • Cancel Anytime
               </p>
             </div>
             <button
@@ -389,7 +636,7 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
               disabled={Boolean(loadingSource)}
               className="flex w-full items-center justify-center gap-2 rounded-full bg-zinc-100 px-6 py-4 text-sm font-bold text-zinc-950 transition hover:bg-white active:scale-95 disabled:cursor-wait disabled:opacity-70 md:w-auto"
             >
-              {getButtonText('bottom_cta', 'Continue with Google')}
+              {getButtonText('bottom_cta', 'Start Your First Run')}
               <ChevronRight size={18} />
             </button>
           </div>

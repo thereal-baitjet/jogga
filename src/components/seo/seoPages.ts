@@ -1,6 +1,6 @@
 export const SITE_URL = 'https://jogga.santosautomation.com';
-export const DEFAULT_META_TITLE = 'Jogga — AI Running Coach';
-export const DEFAULT_META_DESCRIPTION = 'Personalized AI running coach with adaptive training plans, GPS tracking, readiness scoring, and race preparation.';
+export const DEFAULT_META_TITLE = 'Jogga — Adaptive AI Running Coach';
+export const DEFAULT_META_DESCRIPTION = 'Affordable AI running coach with adaptive plans that adjust to missed runs, busy weeks, GPS workouts, and recovery. Start with a 3-day free trial.';
 
 export interface SeoPageContent {
   path: string;
@@ -20,25 +20,25 @@ export interface SeoPageContent {
 export const SEO_PAGES: SeoPageContent[] = [
   {
     path: '/ai-running-coach',
-    title: 'AI Running Coach | Personalized Adaptive Training Plans | Jogga',
+    title: 'AI Running Coach That Adapts to Your Life | Jogga',
     description:
-      'Train smarter with Jogga, the AI running coach that builds adaptive personalized running plans for beginners, 5K runners, marathon training, and long-term consistency.',
-    h1: 'Your AI Running Coach',
-    eyebrow: 'AI running coach',
+      'Jogga is an affordable AI running coach that adjusts training after missed runs, busy weeks, low energy, GPS workouts, and recovery signals.',
+    h1: 'AI Running Coach That Adapts to Your Life',
+    eyebrow: 'Adaptive AI running coach',
     intro:
-      'Jogga turns your goal, schedule, run history, and recovery signals into a plan that adjusts as your training changes.',
-    cta: 'Start Your Personalized Running Plan',
+      'Jogga turns your goal, schedule, run history, and recovery signals into a flexible plan that keeps moving when real life interrupts training.',
+    cta: 'Start Your Adaptive Running Plan',
     primaryKeyword: 'AI running coach',
     sections: [
       {
         heading: 'What is an AI running coach?',
         body:
-          'An AI running coach helps translate your running goal into daily training decisions. Instead of following a fixed PDF, Jogga gives you a plan that considers where you are today and what you are trying to build toward.',
+          'An AI running coach translates your running goal into daily training decisions. Instead of a fixed PDF or rigid calendar, Jogga gives you a plan that responds to where you are today and where you want to go.',
       },
       {
         heading: 'How Jogga adapts your training',
         body:
-          'Jogga is built around adaptive training. If your schedule changes, you miss a run, or your progress shifts, the app keeps your upcoming work aligned with the bigger goal.',
+          'If your schedule changes, you miss a run, or your energy is low, Jogga adjusts the next steps so one imperfect week does not erase your momentum.',
       },
       {
         heading: 'GPS and readiness tracking',
@@ -48,24 +48,24 @@ export const SEO_PAGES: SeoPageContent[] = [
       {
         heading: 'Personalized plans',
         body:
-          'A beginner runner, a 5K runner, and a marathon runner need different progressions. Jogga builds around experience level, preferred training days, mileage, and race timing.',
+          'A beginner runner, a 5K runner, and a marathon runner need different progressions. Jogga builds around experience level, preferred training days, mileage, race timing, and real-world availability.',
       },
       {
         heading: 'Why runners quit and how Jogga helps',
         body:
-          'Most runners quit because the plan feels too generic, too hard, or too easy to ignore. Jogga keeps the next step clear so consistency feels manageable.',
+          'Most runners quit when the plan feels expensive, generic, or punishing after missed workouts. Jogga keeps the next step clear, realistic, and easier to return to.',
       },
     ],
   },
   {
     path: '/5k-training-plan',
-    title: '5K Training Plan for Beginners | Jogga',
+    title: 'Adaptive 5K Training Plan for Beginners | Jogga',
     description:
-      'Start your first 5K with an adaptive beginner-friendly training plan powered by Jogga AI.',
+      'Start your first 5K with an affordable training plan that adapts when life gets busy, runs are missed, or your energy changes.',
     h1: '5K Training Plan for Beginners',
     eyebrow: '5K training',
     intro:
-      'A good first 5K plan should build confidence, protect recovery, and help you show up consistently without guessing what to do next.',
+      'A good first 5K plan should build confidence, protect recovery, and stay flexible enough for busy weeks without making you feel behind.',
     cta: 'Start Your 5K Plan',
     primaryKeyword: '5K training plan',
     sections: [
@@ -92,19 +92,19 @@ export const SEO_PAGES: SeoPageContent[] = [
       {
         heading: 'Why adaptive plans matter',
         body:
-          'Fixed plans break when life changes. Adaptive planning keeps your 5K goal moving even when a workout is missed or your week gets rearranged.',
+          'Fixed plans break when life changes. Adaptive planning keeps your 5K goal moving even when a workout is missed, your week gets rearranged, or your energy is lower than expected.',
       },
     ],
   },
   {
     path: '/10k-training-plan',
-    title: '10K Training Plan | Adaptive Running Coach | Jogga',
+    title: 'Adaptive 10K Training Plan | Affordable AI Coach | Jogga',
     description:
-      'Build endurance and improve consistency with Jogga’s adaptive 10K running plan.',
+      'Build endurance with Jogga, an affordable AI running coach that adapts your 10K plan around missed runs, pacing, recovery, and busy weeks.',
     h1: 'Adaptive 10K Training Plan',
     eyebrow: '10K training',
     intro:
-      'A 10K plan should build endurance, pacing control, and repeatable weekly rhythm without pushing every run too hard.',
+      'A 10K plan should build endurance, pacing control, and repeatable weekly rhythm without forcing every busy runner into the same rigid schedule.',
     cta: 'Start Your 10K Plan',
     primaryKeyword: '10K training plan',
     sections: [
@@ -131,19 +131,19 @@ export const SEO_PAGES: SeoPageContent[] = [
       {
         heading: 'Adaptive coaching benefits',
         body:
-          'When your week changes, Jogga adjusts the training path so your next workout still fits your body, schedule, and goal.',
+          'When your week changes, Jogga adjusts the training path so your next workout still fits your body, schedule, budget, and goal.',
       },
     ],
   },
   {
     path: '/marathon-training-plan',
-    title: 'Marathon Training Plan | AI Running Coach | Jogga',
+    title: 'Adaptive Marathon Training Plan | AI Running Coach | Jogga',
     description:
-      'Prepare for your marathon with adaptive pacing, recovery, and long-run planning powered by Jogga AI.',
+      'Prepare for a marathon with an adaptive AI running coach that adjusts long runs, recovery, pacing, and missed workouts around real life.',
     h1: 'AI Marathon Training Plan',
     eyebrow: 'Marathon training',
     intro:
-      'Marathon training needs more than a long-run calendar. Jogga helps organize pacing, recovery, and readiness so the plan stays usable week after week.',
+      'Marathon training needs more than a long-run calendar. Jogga helps organize pacing, recovery, and readiness so the plan stays usable when life gets busy.',
     cta: 'Train for Your Marathon',
     primaryKeyword: 'marathon training plan',
     sections: [
@@ -160,7 +160,7 @@ export const SEO_PAGES: SeoPageContent[] = [
       {
         heading: 'Avoiding burnout',
         body:
-          'Burnout often comes from stacking too much intensity or ignoring fatigue. Adaptive planning helps keep the training load productive instead of overwhelming.',
+          'Burnout often comes from stacking too much intensity, ignoring fatigue, or trying to make up missed runs all at once. Adaptive planning helps keep the training load productive instead of overwhelming.',
       },
       {
         heading: 'Recovery optimization',
@@ -170,19 +170,19 @@ export const SEO_PAGES: SeoPageContent[] = [
       {
         heading: 'Race readiness',
         body:
-          'Race readiness comes from consistent preparation, realistic pacing, and knowing when to adjust. Jogga keeps those signals visible as your marathon approaches.',
+          'Race readiness comes from consistent preparation, realistic pacing, and knowing when to adjust. Jogga keeps those signals visible as your marathon approaches without requiring expensive one-on-one coaching.',
       },
     ],
   },
   {
     path: '/beginner-running-plan',
-    title: 'Beginner Running Plan | Start Running with Confidence | Jogga',
+    title: 'Beginner Running Plan That Adapts to Real Life | Jogga',
     description:
-      'A beginner-friendly adaptive running plan that helps new runners build consistency safely.',
+      'Start running with an affordable beginner plan that adapts to missed days, low energy, recovery, and real-life schedules.',
     h1: 'Beginner Running Plan',
     eyebrow: 'Beginner running',
     intro:
-      'Starting to run should feel structured, calm, and sustainable. Jogga helps new runners build consistency without turning every workout into a test.',
+      'Starting to run should feel structured, calm, and sustainable. Jogga helps new runners build consistency without guilt when a day gets missed.',
     cta: 'Start Running with Jogga',
     primaryKeyword: 'beginner running plan',
     sections: [
@@ -209,19 +209,19 @@ export const SEO_PAGES: SeoPageContent[] = [
       {
         heading: 'Staying motivated',
         body:
-          'Motivation is easier when the next step is obvious. Jogga keeps goals, progress, and upcoming runs visible so momentum is easier to maintain.',
+          'Motivation is easier when the next step is obvious and the plan does not punish normal life. Jogga keeps goals, progress, and upcoming runs visible so momentum is easier to maintain.',
       },
     ],
   },
   {
     path: '/half-marathon-plan',
-    title: 'Half Marathon Training Plan | Personalized Running Coach | Jogga',
+    title: 'Adaptive Half Marathon Training Plan | Jogga',
     description:
-      'Train for your half marathon with adaptive pacing, long-run progression, and AI-powered coaching.',
+      'Train for a half marathon with adaptive pacing, long-run progression, recovery guidance, and affordable AI coaching that fits real life.',
     h1: 'Half Marathon Training Plan',
     eyebrow: 'Half marathon training',
     intro:
-      'A half marathon plan should grow endurance, sharpen pacing, and keep recovery under control so the distance becomes manageable.',
+      'A half marathon plan should grow endurance, sharpen pacing, and keep recovery under control while staying flexible enough for busy weeks.',
     cta: 'Start Your Half Marathon Plan',
     primaryKeyword: 'half marathon training plan',
     sections: [
@@ -248,7 +248,7 @@ export const SEO_PAGES: SeoPageContent[] = [
       {
         heading: 'Race-day readiness',
         body:
-          'Race-day readiness comes from knowing the distance, practicing steady effort, and arriving healthy. Jogga keeps the plan pointed at that outcome.',
+          'Race-day readiness comes from knowing the distance, practicing steady effort, and arriving healthy. Jogga keeps the plan pointed at that outcome even when training weeks are not perfect.',
       },
     ],
   },

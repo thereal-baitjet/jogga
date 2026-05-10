@@ -1,4 +1,4 @@
-import { DEFAULT_META_DESCRIPTION, DEFAULT_META_TITLE, SITE_URL } from '../seo/seoPages';
+import { SITE_URL } from '../seo/seoPages';
 
 export interface LegalPageSection {
   heading: string;
@@ -14,9 +14,6 @@ export interface LegalPageContent {
   updatedIso: string;
   sections: LegalPageSection[];
 }
-
-export const LEGAL_META_TITLE = DEFAULT_META_TITLE;
-export const LEGAL_META_DESCRIPTION = DEFAULT_META_DESCRIPTION;
 
 export const LEGAL_PAGES: LegalPageContent[] = [
   {
@@ -126,7 +123,7 @@ export const LEGAL_PAGES: LegalPageContent[] = [
       {
         heading: 'Contact',
         body: [
-          'For privacy questions or deletion requests, contact Jogga at baitjet@gmail.com. Jogga is based in Union City, NJ. No street address is listed.',
+          'For privacy questions or deletion requests, contact Jogga at baitjet@gmail.com. Jogga is based in Union City, NJ.',
         ],
       },
     ],
@@ -244,7 +241,7 @@ export const LEGAL_PAGES: LegalPageContent[] = [
       {
         heading: 'Contact',
         body: [
-          'For terms, billing, or account questions, contact Jogga at baitjet@gmail.com. Jogga is based in Union City, NJ. No street address is listed.',
+          'For terms, billing, or account questions, contact Jogga at baitjet@gmail.com. Jogga is based in Union City, NJ.',
         ],
       },
     ],

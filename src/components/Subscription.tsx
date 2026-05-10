@@ -54,6 +54,10 @@ function buildCheckoutRedirectUrl(plan: BillingPlan, userId: string, userEmail?:
   return `/api/checkout-redirect?${params.toString()}`;
 }
 
+function getBillingPriceSuffix(plan: BillingPlan) {
+  return plan.id === 'monthly' ? '/mo' : '/year';
+}
+
 export default function Subscription({
   onBack,
   isUnlocked,
@@ -244,12 +248,23 @@ export default function Subscription({
               )}
 
               <div className="flex justify-between items-start mb-4">
-                <div>
+                <div className="pr-4">
+                  <div className="mb-2 inline-flex rounded-full bg-yellow-400/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-yellow-200 ring-1 ring-yellow-400/20">
+                    50% Off
+                  </div>
                   <h3 className="text-lg font-medium">{plan.name}</h3>
                   <p className="text-xs text-zinc-500">{plan.description}</p>
                 </div>
-                <div className="text-right">
-                  <div className="text-2xl font-light">{plan.price}</div>
+                <div className="shrink-0 text-right">
+                  <div className="text-xs text-zinc-500 line-through">
+                    Normally {plan.compareAtPrice}
+                  </div>
+                  <div className="mt-1 text-2xl font-bold text-zinc-50">
+                    Now {plan.price}
+                    <span className="align-baseline text-xs font-semibold text-zinc-400">
+                      {getBillingPriceSuffix(plan)}
+                    </span>
+                  </div>
                   <div className="text-[10px] text-zinc-500 uppercase tracking-widest">{plan.period}</div>
                 </div>
               </div>
