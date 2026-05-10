@@ -1,5 +1,5 @@
 import Stripe from "stripe";
-import { getStripe, getStripeId, isAccessSubscriptionStatus, sendError, sendJson } from "./_utils.js";
+import { enforceIpRateLimit, getStripe, getStripeId, isAccessSubscriptionStatus, sendError, sendJson } from "./_utils.js";
 import { fulfillSubscription } from "./stripe/fulfillment.js";
 
 function escapeStripeSearchValue(value: string) {
@@ -26,6 +26,17 @@ async function findUserSubscription(stripe: Stripe, userId: string) {
 export default async function handler(req: any, res: any) {
   if (req.method !== "GET") {
     return sendJson(res, 405, { error: "Method not allowed" });
+  }
+
+  try {
+    enforceIpRateLimit(req, {
+      feature: "subscription-status:read",
+      maxRequests: 60,
+      windowMs: 60 * 1000,
+      message: "Too many subscription checks. Try again shortly.",
+    });
+  } catch (error) {
+    return sendError(res, error);
   }
 
   const { userId } = req.query;

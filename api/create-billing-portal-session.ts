@@ -1,4 +1,4 @@
-import { getRequestOrigin, getStripe, getStripeId, readJsonBody, sendError, sendJson } from "./_utils.js";
+import { enforceIpRateLimit, getRequestOrigin, getStripe, getStripeId, readJsonBody, sendError, sendJson } from "./_utils.js";
 
 function isValidStripeId(value: unknown, prefix: string) {
   return typeof value === "string" && value.startsWith(prefix) && value.trim().length > prefix.length;
@@ -10,6 +10,13 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    enforceIpRateLimit(req, {
+      feature: "billing-portal:create",
+      maxRequests: 10,
+      windowMs: 60 * 1000,
+      message: "Too many billing portal attempts. Try again in a minute.",
+    });
+
     const { customerId, subscriptionId, userId } = await readJsonBody(req);
 
     if (!isValidStripeId(customerId, "cus_")) {

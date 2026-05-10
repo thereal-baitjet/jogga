@@ -1,4 +1,4 @@
-import { createCoachOpinionResponse, readJsonBody, sendError, sendJson } from "./_utils.js";
+import { createCoachOpinionResponse, enforceIpRateLimit, readJsonBody, sendError, sendJson } from "./_utils.js";
 
 export default async function handler(req: any, res: any) {
   if (req.method !== "POST") {
@@ -6,6 +6,13 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    enforceIpRateLimit(req, {
+      feature: "ai:coach-opinion",
+      maxRequests: 24,
+      windowMs: 60 * 1000,
+      message: "Too many coach requests. Try again shortly.",
+    });
+
     const body = await readJsonBody(req);
     const response = await createCoachOpinionResponse(req, body);
 

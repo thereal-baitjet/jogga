@@ -1,8 +1,19 @@
-import { APP_URL, GOOGLE_AUTH_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, sendJson } from "../../_utils.js";
+import { APP_URL, enforceIpRateLimit, GOOGLE_AUTH_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, sendError, sendJson } from "../../_utils.js";
 
 export default function handler(req: any, res: any) {
   if (req.method !== "GET") {
     return sendJson(res, 405, { error: "Method not allowed" });
+  }
+
+  try {
+    enforceIpRateLimit(req, {
+      feature: "google-health-auth:url",
+      maxRequests: 20,
+      windowMs: 60 * 1000,
+      message: "Too many health connection attempts. Try again shortly.",
+    });
+  } catch (error) {
+    return sendError(res, error);
   }
 
   if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {

@@ -1,4 +1,4 @@
-import { getPriceId, getRequestOrigin, getStripe } from "./_utils.js";
+import { enforceIpRateLimit, getPriceId, getRequestOrigin, getStripe } from "./_utils.js";
 import { FREE_TRIAL_DAYS, isTrialCheckout, normalizeBillingPlanId } from "../src/config/billing.js";
 
 function redirect(res: any, statusCode: number, location: string) {
@@ -19,6 +19,13 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    enforceIpRateLimit(req, {
+      feature: "checkout-session:redirect",
+      maxRequests: 12,
+      windowMs: 60 * 1000,
+      message: "Too many checkout attempts. Try again in a minute.",
+    });
+
     const { planId, userId, email, trial } = req.query;
     const billingPlanId = normalizeBillingPlanId(planId);
     const useTrial = isTrialCheckout(planId, trial);

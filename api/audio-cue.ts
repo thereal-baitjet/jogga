@@ -1,4 +1,4 @@
-import { generateCoachAudio, readJsonBody, requireAiAccess, sendError, sendJson } from "./_utils.js";
+import { enforceIpRateLimit, generateCoachAudio, readJsonBody, requireAiAccess, sendError, sendJson } from "./_utils.js";
 
 export default async function handler(req: any, res: any) {
   if (req.method !== "POST") {
@@ -6,6 +6,13 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    enforceIpRateLimit(req, {
+      feature: "ai:audio-cue",
+      maxRequests: 12,
+      windowMs: 60 * 1000,
+      message: "Too many audio requests. Try again shortly.",
+    });
+
     await requireAiAccess(req, {
       feature: "audio-cue",
       maxRequests: 60,

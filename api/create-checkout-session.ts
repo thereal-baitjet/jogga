@@ -1,4 +1,4 @@
-import { getPriceId, getRequestOrigin, getStripe, readJsonBody, sendError, sendJson } from "./_utils.js";
+import { enforceIpRateLimit, getPriceId, getRequestOrigin, getStripe, readJsonBody, sendError, sendJson } from "./_utils.js";
 import { FREE_TRIAL_DAYS, isTrialCheckout, normalizeBillingPlanId } from "../src/config/billing.js";
 
 export default async function handler(req: any, res: any) {
@@ -7,6 +7,13 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    enforceIpRateLimit(req, {
+      feature: "checkout-session:create",
+      maxRequests: 12,
+      windowMs: 60 * 1000,
+      message: "Too many checkout attempts. Try again in a minute.",
+    });
+
     const { planId, userId, email, trial } = await readJsonBody(req);
     const billingPlanId = normalizeBillingPlanId(planId);
     const useTrial = isTrialCheckout(planId, trial);

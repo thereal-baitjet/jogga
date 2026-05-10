@@ -1,5 +1,5 @@
 import { getFirebaseAdminDb } from "../firebase-admin.js";
-import { axios, readJsonBody, sendError, sendJson, verifyFirebaseUser } from "../_utils.js";
+import { axios, enforceIpRateLimit, readJsonBody, sendError, sendJson, verifyFirebaseUser } from "../_utils.js";
 
 const GOOGLE_FIT_DATA_TYPES = {
   steps: "com.google.step_count.delta",
@@ -102,6 +102,13 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    enforceIpRateLimit(req, {
+      feature: "health:sync",
+      maxRequests: 12,
+      windowMs: 60 * 1000,
+      message: "Too many health sync attempts. Try again shortly.",
+    });
+
     const user = await verifyFirebaseUser(req);
     const { accessToken } = await readJsonBody(req);
 

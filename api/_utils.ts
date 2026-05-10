@@ -30,6 +30,7 @@ const COACH_OUTPUT_INSTRUCTION = `\n\nHard limit: respond in ${COACH_RESPONSE_MA
 let stripeClient: Stripe | null = null;
 let geminiClient: GoogleGenAI | null = null;
 const aiRateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
+const ipRateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
 const coachUsageFallbackBuckets = new Map<string, {
   freeLifetimeCount: number;
   paidDailyCount: number;
@@ -54,6 +55,13 @@ interface CoachCacheContext {
   readinessScore: string;
   todayWorkoutId: string;
   recentWorkoutSummary: string;
+}
+
+interface RateLimitOptions {
+  feature: string;
+  maxRequests: number;
+  windowMs: number;
+  message?: string;
 }
 
 export { axios };
@@ -316,6 +324,7 @@ export function sendError(res: any, error: any) {
     error: message,
     ...(typeof error?.code === "string" ? { code: error.code } : {}),
     ...(typeof error?.upgradeRequired === "boolean" ? { upgradeRequired: error.upgradeRequired } : {}),
+    ...(typeof error?.retryAfterSeconds === "number" ? { retryAfterSeconds: error.retryAfterSeconds } : {}),
   });
 }
 
@@ -331,17 +340,73 @@ function getAuthorizationToken(req: any) {
 function createHttpError(
   status: number,
   message: string,
-  options: { code?: string; upgradeRequired?: boolean } = {}
+  options: { code?: string; upgradeRequired?: boolean; retryAfterSeconds?: number } = {}
 ) {
   const error = new Error(message) as Error & {
     status: number;
     code?: string;
     upgradeRequired?: boolean;
+    retryAfterSeconds?: number;
   };
   error.status = status;
   error.code = options.code;
   error.upgradeRequired = options.upgradeRequired;
+  error.retryAfterSeconds = options.retryAfterSeconds;
   return error;
+}
+
+function getHeaderString(value: unknown) {
+  if (Array.isArray(value)) return value[0];
+  return typeof value === "string" ? value : null;
+}
+
+export function getClientIp(req: any) {
+  const forwardedFor = getHeaderString(req.headers?.["x-forwarded-for"] || req.headers?.["X-Forwarded-For"]);
+  if (forwardedFor) return forwardedFor.split(",")[0].trim();
+
+  return (
+    getHeaderString(req.headers?.["cf-connecting-ip"] || req.headers?.["CF-Connecting-IP"]) ||
+    getHeaderString(req.headers?.["x-real-ip"] || req.headers?.["X-Real-IP"]) ||
+    req.socket?.remoteAddress ||
+    "unknown"
+  );
+}
+
+function cleanupExpiredRateLimits(now: number) {
+  if (ipRateLimitBuckets.size < 5000) return;
+
+  for (const [key, bucket] of ipRateLimitBuckets.entries()) {
+    if (bucket.resetAt <= now) ipRateLimitBuckets.delete(key);
+  }
+}
+
+export function enforceIpRateLimit(req: any, options: RateLimitOptions) {
+  const now = Date.now();
+  cleanupExpiredRateLimits(now);
+
+  const ip = getClientIp(req);
+  const key = `${options.feature}:${ip}`;
+  const current = ipRateLimitBuckets.get(key);
+
+  if (!current || current.resetAt <= now) {
+    ipRateLimitBuckets.set(key, { count: 1, resetAt: now + options.windowMs });
+    return;
+  }
+
+  if (current.count >= options.maxRequests) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((current.resetAt - now) / 1000));
+    console.warn("IP rate limit exceeded", {
+      feature: options.feature,
+      ipHash: hashValue(ip).slice(0, 12),
+      retryAfterSeconds,
+    });
+    throw createHttpError(429, options.message || "Too many requests. Try again shortly.", {
+      code: "RATE_LIMITED",
+      retryAfterSeconds,
+    });
+  }
+
+  current.count += 1;
 }
 
 export async function verifyFirebaseUser(req: any) {

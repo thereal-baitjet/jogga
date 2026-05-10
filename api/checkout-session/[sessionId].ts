@@ -1,10 +1,21 @@
 import Stripe from "stripe";
-import { checkoutSessionAllowsAccess, getStripe, getStripeId, getSubscriptionStatus, sendError, sendJson } from "../_utils.js";
+import { checkoutSessionAllowsAccess, enforceIpRateLimit, getStripe, getStripeId, getSubscriptionStatus, sendError, sendJson } from "../_utils.js";
 import { fulfillCheckoutSession } from "../stripe/fulfillment.js";
 
 export default async function handler(req: any, res: any) {
   if (req.method !== "GET") {
     return sendJson(res, 405, { error: "Method not allowed" });
+  }
+
+  try {
+    enforceIpRateLimit(req, {
+      feature: "checkout-session:read",
+      maxRequests: 60,
+      windowMs: 60 * 1000,
+      message: "Too many checkout verification attempts. Try again shortly.",
+    });
+  } catch (error) {
+    return sendError(res, error);
   }
 
   const { sessionId, userId } = req.query;

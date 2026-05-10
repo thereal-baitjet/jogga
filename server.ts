@@ -4,7 +4,7 @@ import Stripe from "stripe";
 import dotenv from "dotenv";
 import axios from "axios";
 import { GoogleGenAI, Modality } from "@google/genai";
-import { createCoachOpinionResponse } from "./api/_utils.js";
+import { createCoachOpinionResponse, enforceIpRateLimit } from "./api/_utils.js";
 import healthSyncHandler from "./api/health/sync.js";
 import { fulfillCheckoutSession, fulfillStripeWebhookEvent, fulfillSubscription } from "./api/stripe/fulfillment.js";
 import { FREE_TRIAL_DAYS, isTrialCheckout, normalizeBillingPlanId } from "./src/config/billing.js";
@@ -399,6 +399,19 @@ async function startServer() {
   });
 
   app.use(express.json());
+  app.use("/api", (req, res, next) => {
+    try {
+      enforceIpRateLimit(req, {
+        feature: `express-api:${req.path}`,
+        maxRequests: 120,
+        windowMs: 60 * 1000,
+        message: "Too many API requests. Try again shortly.",
+      });
+      next();
+    } catch (error) {
+      sendApiError(res, error);
+    }
+  });
 
   app.post("/api/coach-opinion", async (req, res) => {
     try {
