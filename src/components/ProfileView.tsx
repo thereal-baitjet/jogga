@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { ChevronLeft, ChevronRight, User, Save, Target, Calendar, Activity, LogOut, Sparkles, Zap, CreditCard } from 'lucide-react';
+import { ChevronLeft, ChevronRight, User, Save, Target, Calendar, Activity, LogOut, Sparkles, Zap, CreditCard, Calculator, Lock } from 'lucide-react';
 import { MarathonReadyingProfile, UserProfile } from '../types';
 import { cn } from '../lib/utils';
-import { formatMonthYear, todayISO } from '../lib/date';
+import { defaultGoalDate, formatMonthYear, isDateAfterToday, todayISO } from '../lib/date';
 
 interface ProfileViewProps {
   profile: UserProfile;
@@ -13,23 +13,57 @@ interface ProfileViewProps {
   onLogout: () => void;
   onInstall?: () => void;
   onManageSubscription?: () => Promise<void>;
+  onViewExpenses?: () => void;
+  onConnectStrava?: () => Promise<void>;
   marathonReadying?: MarathonReadyingProfile;
 }
 
-export default function ProfileView({ profile, onBack, onSave, onRegeneratePlan, onLogout, onInstall, onManageSubscription, marathonReadying }: ProfileViewProps) {
+export default function ProfileView({ profile, onBack, onSave, onRegeneratePlan, onLogout, onInstall, onManageSubscription, onViewExpenses, onConnectStrava, marathonReadying }: ProfileViewProps) {
   const [editedProfile, setEditedProfile] = useState<UserProfile>({ ...profile });
   const [isSaving, setIsSaving] = useState(false);
   const [isManagingBilling, setIsManagingBilling] = useState(false);
+  const [isConnectingStrava, setIsConnectingStrava] = useState(false);
   const [billingError, setBillingError] = useState<string | null>(null);
+  const [stravaError, setStravaError] = useState<string | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const memberSince = formatMonthYear(profile.createdAt || profile.subscriptionVerifiedAt || todayISO());
   const canManageBilling = Boolean(onManageSubscription && (profile.isUnlocked || profile.stripeCustomerId));
   const subscriptionStatus = profile.subscriptionStatus ? profile.subscriptionStatus.replace(/_/g, ' ') : 'active';
+  const canViewExpenseDashboard = Boolean(
+    onViewExpenses &&
+    (
+      profile.accessSource === 'admin' ||
+      profile.accessSource === 'whitelist' ||
+      profile.email?.toLowerCase() === 'baitjet@gmail.com'
+    )
+  );
 
   const handleSave = () => {
+    if (!editedProfile.name.trim()) {
+      setProfileError('Add your name before saving.');
+      return;
+    }
+
+    if (!editedProfile.preferredDays.length) {
+      setProfileError('Choose at least one day you can train.');
+      return;
+    }
+
+    setProfileError(null);
     setIsSaving(true);
+    const weeklyMileagePreference = Number.isFinite(editedProfile.weeklyMileagePreference)
+      ? Math.min(100, Math.max(5, editedProfile.weeklyMileagePreference))
+      : 15;
+    const sanitizedProfile = {
+      ...editedProfile,
+      name: editedProfile.name.trim(),
+      goalDate: isDateAfterToday(editedProfile.goalDate) ? editedProfile.goalDate : defaultGoalDate(),
+      weeklyMileagePreference,
+    };
+
     // Simulate a brief delay for UX
     setTimeout(() => {
-      onSave(editedProfile);
+      onSave(sanitizedProfile);
       setIsSaving(false);
     }, 500);
   };
@@ -48,17 +82,33 @@ export default function ProfileView({ profile, onBack, onSave, onRegeneratePlan,
     }
   };
 
+  const handleConnectStrava = async () => {
+    if (!onConnectStrava || isConnectingStrava) return;
+
+    setStravaError(null);
+    setIsConnectingStrava(true);
+    try {
+      await onConnectStrava();
+    } catch (error) {
+      console.error('Strava connection error:', error);
+      setStravaError(error instanceof Error ? error.message : 'Unable to connect Strava Free.');
+    } finally {
+      setIsConnectingStrava(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col max-w-md mx-auto w-full relative">
       {/* Header */}
       <div className="p-6 flex items-center justify-between border-b border-zinc-900 bg-zinc-950/80 backdrop-blur-xl sticky top-0 z-10">
-        <button onClick={onBack} className="p-2 hover:bg-zinc-900 rounded-full transition-colors">
+        <button onClick={onBack} aria-label="Back to dashboard" className="p-2 hover:bg-zinc-900 rounded-full transition-colors">
           <ChevronLeft size={24} />
         </button>
         <h1 className="text-sm font-bold uppercase tracking-widest text-zinc-500">Your Profile</h1>
         <button 
           onClick={handleSave}
           disabled={isSaving}
+          aria-label="Save profile"
           className="p-2 text-zinc-100 hover:text-white transition-colors disabled:opacity-50"
         >
           {isSaving ? (
@@ -93,7 +143,7 @@ export default function ProfileView({ profile, onBack, onSave, onRegeneratePlan,
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-zinc-400">
                 <Sparkles size={16} className="text-yellow-400" />
-                <h2 className="text-[10px] font-bold uppercase tracking-normal">Marathon Readying</h2>
+                <h2 className="text-[10px] font-bold uppercase tracking-normal">Training Momentum</h2>
               </div>
               <span className="rounded-full bg-yellow-400/10 px-3 py-1 text-xs font-bold text-yellow-200">
                 Level {marathonReadying.level}
@@ -116,10 +166,17 @@ export default function ProfileView({ profile, onBack, onSave, onRegeneratePlan,
               </div>
               <div>
                 <div className="text-sm font-medium">{marathonReadying.readinessPoints}</div>
-                <div className="text-[9px] font-bold uppercase tracking-widest text-zinc-600">Readying</div>
+                <div className="text-[9px] font-bold uppercase tracking-widest text-zinc-600">Momentum</div>
               </div>
             </div>
           </section>
+        )}
+
+        {/* Training Goals */}
+        {profileError && (
+          <div role="alert" className="rounded-2xl border border-yellow-400/20 bg-yellow-400/10 p-4 text-xs leading-relaxed text-yellow-100">
+            {profileError}
+          </div>
         )}
 
         {/* Training Goals */}
@@ -149,7 +206,7 @@ export default function ProfileView({ profile, onBack, onSave, onRegeneratePlan,
             <input 
               type="date"
               value={editedProfile.goalDate}
-              min={todayISO()}
+              min={defaultGoalDate(1)}
               onChange={(e) => setEditedProfile({ ...editedProfile, goalDate: e.target.value })}
               className="w-full bg-transparent text-lg font-medium outline-none"
             />
@@ -166,8 +223,14 @@ export default function ProfileView({ profile, onBack, onSave, onRegeneratePlan,
             <label className="text-[10px] uppercase tracking-widest text-zinc-500">Weekly Mileage Preference (km)</label>
             <input 
               type="number"
+              min="5"
+              max="100"
+              step="5"
               value={editedProfile.weeklyMileagePreference}
-              onChange={(e) => setEditedProfile({ ...editedProfile, weeklyMileagePreference: parseInt(e.target.value) })}
+              onChange={(e) => {
+                const value = parseInt(e.target.value, 10);
+                setEditedProfile({ ...editedProfile, weeklyMileagePreference: Number.isFinite(value) ? value : 15 });
+              }}
               className="w-full bg-transparent text-lg font-medium outline-none"
             />
           </div>
@@ -192,6 +255,7 @@ export default function ProfileView({ profile, onBack, onSave, onRegeneratePlan,
                       : [...editedProfile.preferredDays, dayIndex].sort();
                     setEditedProfile({ ...editedProfile, preferredDays: newDays });
                   }}
+                  aria-pressed={isSelected}
                   className={cn(
                     "w-10 h-10 rounded-full text-xs font-bold transition-all border",
                     isSelected 
@@ -279,6 +343,57 @@ export default function ProfileView({ profile, onBack, onSave, onRegeneratePlan,
             <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-[10px] leading-relaxed text-red-300">
               {billingError}
             </div>
+          )}
+
+          {onConnectStrava && (
+            <button
+              onClick={handleConnectStrava}
+              disabled={isConnectingStrava || Boolean(profile.isStravaConnected)}
+              className="w-full bg-zinc-900/30 border border-zinc-800/50 rounded-2xl p-4 flex items-center justify-between group hover:bg-zinc-900/50 transition-all disabled:opacity-70"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-full bg-zinc-900 flex items-center justify-center text-[#fc4c02] shrink-0">
+                  {isConnectingStrava ? (
+                    <div className="w-5 h-5 border-2 border-[#fc4c02] border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Lock size={20} />
+                  )}
+                </div>
+                <div className="text-left min-w-0">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-100">
+                    {profile.isStravaConnected ? 'Strava Free Connected' : 'Connect Strava Free'}
+                  </div>
+                  <div className="text-[8px] text-zinc-500 uppercase tracking-widest truncate">
+                    {profile.isStravaConnected ? `${profile.stravaRecentRunCount || 0} recent runs imported privately` : 'Read-only import. No posting.'}
+                  </div>
+                </div>
+              </div>
+              <ChevronRight size={16} className="text-zinc-700 group-hover:text-zinc-500 transition-colors shrink-0" />
+            </button>
+          )}
+
+          {stravaError && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-[10px] leading-relaxed text-red-300">
+              {stravaError}
+            </div>
+          )}
+
+          {canViewExpenseDashboard && (
+            <button
+              onClick={onViewExpenses}
+              className="w-full bg-zinc-900/30 border border-zinc-800/50 rounded-2xl p-4 flex items-center justify-between group hover:bg-zinc-900/50 transition-all"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-500 group-hover:text-zinc-100 transition-colors shrink-0">
+                  <Calculator size={20} />
+                </div>
+                <div className="text-left min-w-0">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-100">Pricing Dashboard</div>
+                  <div className="text-[8px] text-zinc-500 uppercase tracking-widest truncate">Suggested pricing and expense guardrails</div>
+                </div>
+              </div>
+              <ChevronRight size={16} className="text-zinc-700 group-hover:text-zinc-500 transition-colors shrink-0" />
+            </button>
           )}
 
           {onInstall && (

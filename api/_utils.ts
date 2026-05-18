@@ -1,8 +1,7 @@
 import axios from "axios";
-import { createHash } from "crypto";
+import { createHash, createHmac, timingSafeEqual } from "crypto";
 import { GoogleGenAI, Modality } from "@google/genai";
 import Stripe from "stripe";
-import { getFirebaseAdminDb } from "./firebase-admin.js";
 import { normalizeBillingPlanId } from "../src/config/billing.js";
 import {
   COACH_INSIGHT_SCHEMA_VERSION,
@@ -16,6 +15,20 @@ export const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 export const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 export const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 export const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
+export const STRAVA_CLIENT_ID = process.env.STRAVA_CLIENT_ID;
+export const STRAVA_CLIENT_SECRET = process.env.STRAVA_CLIENT_SECRET;
+export const STRAVA_AUTH_URL = "https://www.strava.com/oauth/authorize";
+export const STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token";
+export const STRAVA_API_URL = "https://www.strava.com/api/v3";
+export const STRAVA_SCOPES = ["read", "activity:read_all"] as const;
+const APP_ORIGIN = new URL(APP_URL).origin;
+const ADDITIONAL_ALLOWED_ORIGINS = (process.env.ADDITIONAL_ALLOWED_ORIGINS || "")
+  .split(",")
+  .map(origin => origin.trim().replace(/\/$/, ""))
+  .filter(Boolean);
+const FREE_ACCESS_EMAILS = new Set(parseDelimitedEnv(process.env.FREE_ACCESS_EMAILS).map(email => email.toLowerCase()));
+const FREE_ACCESS_UIDS = new Set(parseDelimitedEnv(process.env.FREE_ACCESS_UIDS));
+const MAX_JSON_BODY_BYTES = 64 * 1024;
 
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
@@ -77,7 +90,30 @@ interface RateLimitOptions {
   message?: string;
 }
 
+interface SameOriginOptions {
+  requireOrigin?: boolean;
+}
+
+interface SignedOAuthStatePayload {
+  uid: string;
+  nonce: string;
+  iat: number;
+  exp: number;
+}
+
 export { axios };
+
+async function getAdminDb() {
+  const { getFirebaseAdminDb } = await import("./firebase-admin.js");
+  return getFirebaseAdminDb();
+}
+
+function parseDelimitedEnv(value: string | undefined) {
+  return (value || "")
+    .split(",")
+    .map(item => item.trim())
+    .filter(Boolean);
+}
 
 export function getStripe() {
   if (!STRIPE_SECRET_KEY) {
@@ -286,6 +322,46 @@ export function getRequestOrigin(req: any) {
   return configuredOrigin;
 }
 
+function getRequestHeader(req: any, name: string) {
+  const value = req.headers?.[name.toLowerCase()] || req.headers?.[name];
+  if (Array.isArray(value)) return value[0];
+  return typeof value === "string" ? value : null;
+}
+
+function normalizeOrigin(value: string | null) {
+  if (!value) return null;
+
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
+function isAllowedOrigin(origin: string) {
+  if (origin === APP_ORIGIN) return true;
+  if (ADDITIONAL_ALLOWED_ORIGINS.includes(origin)) return true;
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
+  return false;
+}
+
+export function enforceSameOrigin(req: any, options: SameOriginOptions = {}) {
+  const origin = normalizeOrigin(getRequestHeader(req, "origin"));
+  const referer = normalizeOrigin(getRequestHeader(req, "referer"));
+  const candidate = origin || referer;
+
+  if (!candidate) {
+    if (options.requireOrigin) {
+      throw createHttpError(403, "Request origin is required.", { code: "ORIGIN_REQUIRED" });
+    }
+    return;
+  }
+
+  if (!isAllowedOrigin(candidate)) {
+    throw createHttpError(403, "Request origin is not allowed.", { code: "ORIGIN_NOT_ALLOWED" });
+  }
+}
+
 export function getPriceId(planId: unknown) {
   const billingPlanId = normalizeBillingPlanId(planId);
   return billingPlanId ? STRIPE_PRICE_IDS[billingPlanId] || null : null;
@@ -342,6 +418,7 @@ export function checkoutSessionAllowsAccess(
 export function sendJson(res: any, status: number, data: unknown) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json");
+  res.setHeader("Cache-Control", "no-store");
   res.end(JSON.stringify(data));
 }
 
@@ -468,6 +545,49 @@ export async function verifyFirebaseUser(req: any) {
   };
 }
 
+export function isFreeAccessUser(user: { uid?: string | null; email?: string | null }) {
+  const uid = typeof user.uid === "string" ? user.uid.trim() : "";
+  const email = typeof user.email === "string" ? user.email.trim().toLowerCase() : "";
+
+  if (FREE_ACCESS_UIDS.has("*") || FREE_ACCESS_EMAILS.has("*")) return true;
+  if (uid && FREE_ACCESS_UIDS.has(uid)) return true;
+  if (email && FREE_ACCESS_EMAILS.has(email)) return true;
+  return false;
+}
+
+export function getFreeAccessReason(user: { uid?: string | null; email?: string | null }) {
+  const uid = typeof user.uid === "string" ? user.uid.trim() : "";
+  const email = typeof user.email === "string" ? user.email.trim().toLowerCase() : "";
+
+  if (FREE_ACCESS_UIDS.has("*") || FREE_ACCESS_EMAILS.has("*")) return "wildcard";
+  if (uid && FREE_ACCESS_UIDS.has(uid)) return "uid";
+  if (email && FREE_ACCESS_EMAILS.has(email)) return "email";
+  return null;
+}
+
+export async function verifyFirebaseUserMatches(req: any, requestedUserId: unknown) {
+  const user = await verifyFirebaseUser(req);
+
+  if (typeof requestedUserId !== "string" || requestedUserId.trim().length === 0) {
+    throw createHttpError(400, "User ID is required");
+  }
+
+  if (requestedUserId !== user.uid) {
+    throw createHttpError(403, "Authenticated user does not match requested user.", {
+      code: "USER_MISMATCH",
+    });
+  }
+
+  return user;
+}
+
+export function normalizeEmail(value: unknown) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (trimmed.length > 254) return null;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed) ? trimmed : null;
+}
+
 function enforceRateLimit(userId: string, feature: string, maxRequests: number, windowMs: number) {
   const now = Date.now();
   const key = `${feature}:${userId}`;
@@ -490,6 +610,11 @@ export async function requireAiAccess(
   options: { feature: string; maxRequests: number; windowMs: number }
 ) {
   const user = await verifyFirebaseUser(req);
+  if (isFreeAccessUser(user)) {
+    enforceRateLimit(user.uid, options.feature, options.maxRequests, options.windowMs);
+    return { user, subscription: null, accessSource: "whitelist" as const };
+  }
+
   const subscription = await findActiveUserSubscription(getStripe(), user.uid);
 
   if (!subscription) {
@@ -497,7 +622,7 @@ export async function requireAiAccess(
   }
 
   enforceRateLimit(user.uid, options.feature, options.maxRequests, options.windowMs);
-  return { user, subscription };
+  return { user, subscription, accessSource: "stripe" as const };
 }
 
 function appendCoachOutputInstruction(prompt: string, responseFormat: CoachResponseFormat = "text") {
@@ -526,6 +651,74 @@ function limitCoachWords(text: string, maxWords = COACH_RESPONSE_MAX_WORDS) {
 
 function hashValue(value: string) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function getStravaOAuthStateSecret() {
+  return process.env.STRAVA_OAUTH_STATE_SECRET || STRAVA_CLIENT_SECRET;
+}
+
+function base64UrlEncode(value: string) {
+  return Buffer.from(value, "utf8").toString("base64url");
+}
+
+function base64UrlDecode(value: string) {
+  return Buffer.from(value, "base64url").toString("utf8");
+}
+
+function signOAuthStatePayload(encodedPayload: string) {
+  const secret = getStravaOAuthStateSecret();
+  if (!secret) {
+    throw createHttpError(503, "Strava OAuth is not configured.");
+  }
+
+  return createHmac("sha256", secret).update(encodedPayload).digest("base64url");
+}
+
+export function createSignedStravaState(uid: string) {
+  const now = Math.floor(Date.now() / 1000);
+  const payload: SignedOAuthStatePayload = {
+    uid,
+    nonce: createHash("sha256").update(`${uid}:${now}:${Math.random()}`).digest("hex").slice(0, 24),
+    iat: now,
+    exp: now + 10 * 60,
+  };
+  const encodedPayload = base64UrlEncode(JSON.stringify(payload));
+  const signature = signOAuthStatePayload(encodedPayload);
+
+  return `${encodedPayload}.${signature}`;
+}
+
+export function verifySignedStravaState(state: unknown) {
+  if (typeof state !== "string" || !state.includes(".")) {
+    throw createHttpError(400, "Invalid Strava OAuth state.");
+  }
+
+  const [encodedPayload, signature] = state.split(".");
+  if (!encodedPayload || !signature) {
+    throw createHttpError(400, "Invalid Strava OAuth state.");
+  }
+
+  const expectedSignature = signOAuthStatePayload(encodedPayload);
+  const provided = Buffer.from(signature, "base64url");
+  const expected = Buffer.from(expectedSignature, "base64url");
+
+  if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
+    throw createHttpError(400, "Invalid Strava OAuth state.");
+  }
+
+  let payload: SignedOAuthStatePayload;
+  try {
+    payload = JSON.parse(base64UrlDecode(encodedPayload));
+  } catch {
+    throw createHttpError(400, "Invalid Strava OAuth state.");
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  if (!payload.uid || typeof payload.uid !== "string" || payload.exp < now) {
+    throw createHttpError(400, "Expired Strava OAuth state.");
+  }
+
+  return payload;
 }
 
 function getUtcDayKey(date = new Date()) {
@@ -586,10 +779,11 @@ async function findOptionalActiveUserSubscription(userId: string) {
 
 async function getCoachAiAccess(req: any) {
   const user = await verifyFirebaseUser(req);
-  const subscription = await findOptionalActiveUserSubscription(user.uid);
-  const tier: AiAccessTier = subscription ? "paid" : "free";
+  const isWhitelisted = isFreeAccessUser(user);
+  const subscription = isWhitelisted ? null : await findOptionalActiveUserSubscription(user.uid);
+  const tier: AiAccessTier = subscription || isWhitelisted ? "paid" : "free";
 
-  return { user, subscription, tier };
+  return { user, subscription, tier, accessSource: isWhitelisted ? "whitelist" : subscription ? "stripe" : "free" };
 }
 
 function enforceFallbackCoachUsageLimit(userId: string, tier: AiAccessTier) {
@@ -631,7 +825,7 @@ function enforceFallbackCoachUsageLimit(userId: string, tier: AiAccessTier) {
 
 async function enforceCoachUsageLimit(userId: string, tier: AiAccessTier) {
   try {
-    const db = getFirebaseAdminDb();
+    const db = await getAdminDb();
     const usageRef = db.collection("users").doc(userId).collection("aiUsage").doc("coach-opinion");
     const dayKey = getUtcDayKey();
 
@@ -696,7 +890,8 @@ async function getCachedCoachResponse(cacheKey: string) {
   }
 
   try {
-    const cacheSnap = await getFirebaseAdminDb().collection("aiResponseCache").doc(cacheKey).get();
+    const db = await getAdminDb();
+    const cacheSnap = await db.collection("aiResponseCache").doc(cacheKey).get();
     const cacheData = cacheSnap.exists ? cacheSnap.data() : null;
     const expiresAt = typeof cacheData?.expiresAt === "number" ? cacheData.expiresAt : 0;
     const provider = typeof cacheData?.provider === "string" ? cacheData.provider : "cache";
@@ -737,7 +932,8 @@ async function cacheCoachResponse(cacheKey: string, response: CoachTextResponse)
   coachResponseCache.set(cacheKey, { expiresAt, response: cacheableResponse });
 
   try {
-    await getFirebaseAdminDb().collection("aiResponseCache").doc(cacheKey).set({
+    const db = await getAdminDb();
+    await db.collection("aiResponseCache").doc(cacheKey).set({
       ...cacheableResponse,
       expiresAt,
       updatedAt: new Date().toISOString(),
@@ -906,12 +1102,22 @@ export async function readRawBody(req: any): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-export async function readJsonBody(req: any) {
+export async function readJsonBody(req: any, options: { maxBytes?: number } = {}) {
+  const maxBytes = options.maxBytes || MAX_JSON_BODY_BYTES;
+
   if (req.body && typeof req.body === "object" && !Buffer.isBuffer(req.body)) {
     return req.body;
   }
 
   const rawBody = await readRawBody(req);
   if (rawBody.length === 0) return {};
-  return JSON.parse(rawBody.toString("utf8"));
+  if (rawBody.length > maxBytes) {
+    throw createHttpError(413, "Request body is too large.");
+  }
+
+  try {
+    return JSON.parse(rawBody.toString("utf8"));
+  } catch {
+    throw createHttpError(400, "Invalid JSON body.");
+  }
 }

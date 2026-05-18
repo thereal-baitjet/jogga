@@ -1,0 +1,11 @@
+# Keep production deployments under the Vercel Hobby 12-function cap.
+# These route wrappers remain in the repo for local development; production
+# uses api/[...path].ts plus underscored helper modules instead.
+api/auth/strava/url.ts
+api/auth/strava/callback.ts
+api/strava/sync.ts
+api/create-checkout-session.ts
+api/create-billing-portal-session.ts
+api/checkout-session.ts
+api/subscription-status.ts
+api/checkout-redirect.ts

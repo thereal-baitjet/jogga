@@ -1,5 +1,6 @@
 export type ExperienceLevel = 'beginner' | 'intermediate' | 'advanced';
 export type GoalType = '5k' | '10k' | 'half-marathon' | 'marathon' | 'fitness';
+export type JoggaNiche = 'postpartum_return' | 'masters_50_plus' | 'ultra_100k' | 'injury_comeback' | 'anti_social_runner';
 export type WorkoutType = 
   | 'Easy run' 
   | 'Long run' 
@@ -22,6 +23,9 @@ export interface UserProfile {
   updatedAt?: string | null;
   lastLoginAt?: string | null;
   profileCompleted?: boolean;
+  niche?: JoggaNiche;
+  privacyDefault?: 'private' | 'private_only' | string;
+  socialFeaturesDisabled?: string[];
   name: string;
   experienceLevel: ExperienceLevel;
   goalType: GoalType;
@@ -32,13 +36,23 @@ export interface UserProfile {
   readinessScore?: ReadinessScore;
   isHealthConnected?: boolean;
   healthProvider?: 'fitbit' | 'apple' | 'google';
+  isStravaConnected?: boolean;
+  stravaAthleteId?: number | null;
+  stravaAthleteName?: string | null;
+  stravaConnectedAt?: string | null;
+  stravaLastSyncAt?: string | null;
+  stravaRecentRunCount?: number | null;
+  stravaRecentDistanceKm?: number | null;
+  stravaRecentElevationMeters?: number | null;
+  stravaRecentDurationHours?: number | null;
+  stravaRecentLoad?: number | null;
   stripeCustomerId?: string | null;
   stripeSubscriptionId?: string | null;
   stripePriceId?: string | null;
   subscriptionStatus?: string | null;
   subscriptionPlan?: 'monthly' | 'yearly' | string | null;
   subscriptionVerifiedAt?: string | null;
-  accessSource?: 'stripe' | 'admin' | string | null;
+  accessSource?: 'stripe' | 'admin' | 'whitelist' | string | null;
 }
 
 export interface Workout {

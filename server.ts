@@ -6,8 +6,13 @@ import axios from "axios";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { createCoachOpinionResponse, enforceIpRateLimit } from "./api/_utils.js";
 import botVerifyHandler from "./api/bot/verify.js";
-import healthSyncHandler from "./api/health/sync.js";
-import { fulfillCheckoutSession, fulfillStripeWebhookEvent, fulfillSubscription } from "./api/stripe/fulfillment.js";
+import stravaAuthCallbackHandler from "./api/auth/strava/callback.js";
+import stravaAuthUrlHandler from "./api/auth/strava/url.js";
+import stravaSyncHandler from "./api/strava/sync.js";
+import checkoutSessionHandler from "./api/checkout-session.js";
+import createBillingPortalSessionHandler from "./api/create-billing-portal-session.js";
+import createCheckoutSessionHandler from "./api/create-checkout-session.js";
+import subscriptionStatusHandler from "./api/subscription-status.js";
 import { FREE_TRIAL_DAYS, isTrialCheckout, normalizeBillingPlanId } from "./src/config/billing.js";
 
 dotenv.config();
@@ -24,6 +29,8 @@ const STRIPE_PRICE_IDS = {
   monthly: process.env.STRIPE_MONTHLY_PRICE_ID,
   yearly: process.env.STRIPE_YEARLY_PRICE_ID,
 };
+const FREE_ACCESS_EMAILS = new Set(parseDelimitedEnv(process.env.FREE_ACCESS_EMAILS).map(email => email.toLowerCase()));
+const FREE_ACCESS_UIDS = new Set(parseDelimitedEnv(process.env.FREE_ACCESS_UIDS));
 
 // Google Health (Google Fit) Configuration
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
@@ -34,6 +41,23 @@ const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 let stripeClient: Stripe | null = null;
 let geminiClient: GoogleGenAI | null = null;
 const aiRateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
+
+function parseDelimitedEnv(value: string | undefined) {
+  return (value || "")
+    .split(",")
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function isFreeAccessUser(user: { uid?: string | null; email?: string | null }) {
+  const uid = typeof user.uid === "string" ? user.uid.trim() : "";
+  const email = typeof user.email === "string" ? user.email.trim().toLowerCase() : "";
+
+  if (FREE_ACCESS_UIDS.has("*") || FREE_ACCESS_EMAILS.has("*")) return true;
+  if (uid && FREE_ACCESS_UIDS.has(uid)) return true;
+  if (email && FREE_ACCESS_EMAILS.has(email)) return true;
+  return false;
+}
 
 function getStripe() {
   if (!STRIPE_SECRET_KEY) {
@@ -324,7 +348,10 @@ async function verifyFirebaseUser(req: express.Request) {
     throw createHttpError(401, "Invalid sign-in session.");
   }
 
-  return { uid: user.localId as string };
+  return {
+    uid: user.localId as string,
+    email: typeof user.email === "string" ? user.email as string : null,
+  };
 }
 
 function enforceRateLimit(userId: string, feature: string, maxRequests: number, windowMs: number) {
@@ -346,6 +373,11 @@ function enforceRateLimit(userId: string, feature: string, maxRequests: number, 
 
 async function requireAiAccess(req: express.Request, options: { feature: string; maxRequests: number; windowMs: number }) {
   const user = await verifyFirebaseUser(req);
+  if (isFreeAccessUser(user)) {
+    enforceRateLimit(user.uid, options.feature, options.maxRequests, options.windowMs);
+    return { user, subscription: null };
+  }
+
   const subscription = await findActiveUserSubscription(getStripe(), user.uid);
 
   if (!subscription) {
@@ -388,6 +420,7 @@ async function startServer() {
     }
 
     try {
+      const { fulfillStripeWebhookEvent } = await import("./api/stripe/fulfillment.js");
       await fulfillStripeWebhookEvent(getStripe(), event);
       return res.json({ received: true });
     } catch (error: any) {
@@ -416,6 +449,11 @@ async function startServer() {
 
   app.post("/api/bot/verify", async (req, res) => {
     await botVerifyHandler(req, res);
+  });
+
+  app.get("/api/free-access/status", async (req, res) => {
+    const { default: freeAccessStatusHandler } = await import("./api/free-access/status.js");
+    await freeAccessStatusHandler(req, res);
   });
 
   app.post("/api/coach-opinion", async (req, res) => {
@@ -546,7 +584,41 @@ async function startServer() {
 
   // Google Health Sync Route
   app.post("/api/health/sync", async (req, res) => {
+    const { default: healthSyncHandler } = await import("./api/health/sync.js");
     await healthSyncHandler(req, res);
+  });
+
+  app.get("/api/auth/strava/url", async (req, res) => {
+    await stravaAuthUrlHandler(req, res);
+  });
+
+  app.get(["/auth/strava/callback", "/auth/strava/callback/"], async (req, res) => {
+    await stravaAuthCallbackHandler(req, res);
+  });
+
+  app.post("/api/strava/sync", async (req, res) => {
+    await stravaSyncHandler(req, res);
+  });
+
+  app.post("/api/create-checkout-session", async (req, res) => {
+    await createCheckoutSessionHandler(req, res);
+  });
+
+  app.post("/api/create-billing-portal-session", async (req, res) => {
+    await createBillingPortalSessionHandler(req, res);
+  });
+
+  app.get("/api/checkout-session", async (req, res) => {
+    await checkoutSessionHandler(req, res);
+  });
+
+  app.get("/api/checkout-session/:sessionId", async (req, res) => {
+    req.query.sessionId = req.params.sessionId;
+    await checkoutSessionHandler(req, res);
+  });
+
+  app.get("/api/subscription-status", async (req, res) => {
+    await subscriptionStatusHandler(req, res);
   });
 
   // API routes
@@ -686,6 +758,7 @@ async function startServer() {
 
       if (unlocked) {
         try {
+          const { fulfillCheckoutSession } = await import("./api/stripe/fulfillment.js");
           const fulfillment = await fulfillCheckoutSession(stripe, session, "checkout.session.verified");
           serverFulfilled = fulfillment.handled;
         } catch (fulfillmentError) {
@@ -745,6 +818,7 @@ async function startServer() {
 
       if (subscription) {
         try {
+          const { fulfillSubscription } = await import("./api/stripe/fulfillment.js");
           const fulfillment = await fulfillSubscription(subscription, "subscription.status.verified", {
             statusOverride: subscriptionStatus,
             forceUnlocked: unlocked,

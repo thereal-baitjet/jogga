@@ -1,6 +1,13 @@
 import Stripe from "stripe";
-import { enforceIpRateLimit, getStripe, getStripeId, isAccessSubscriptionStatus, sendError, sendJson } from "./_utils.js";
-import { fulfillSubscription } from "./stripe/fulfillment.js";
+import {
+  enforceIpRateLimit,
+  getStripe,
+  getStripeId,
+  isAccessSubscriptionStatus,
+  sendError,
+  sendJson,
+  verifyFirebaseUserMatches,
+} from "./_utils.js";
 
 function escapeStripeSearchValue(value: string) {
   return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
@@ -46,8 +53,9 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    const user = await verifyFirebaseUserMatches(req, userId);
     const stripe = getStripe();
-    const subscription = await findUserSubscription(stripe, userId);
+    const subscription = await findUserSubscription(stripe, user.uid);
     const subscriptionStatus = subscription?.cancel_at_period_end
       ? "canceling"
       : subscription?.status || null;
@@ -56,6 +64,7 @@ export default async function handler(req: any, res: any) {
 
     if (subscription) {
       try {
+        const { fulfillSubscription } = await import("./stripe/fulfillment.js");
         const fulfillment = await fulfillSubscription(subscription, "subscription.status.verified", {
           statusOverride: subscriptionStatus,
           forceUnlocked: unlocked,
@@ -63,7 +72,7 @@ export default async function handler(req: any, res: any) {
         serverFulfilled = fulfillment.handled;
       } catch (fulfillmentError) {
         console.error("Subscription status server fulfillment failed:", {
-          userId,
+          userId: user.uid,
           subscriptionId: subscription.id,
           message: fulfillmentError instanceof Error ? fulfillmentError.message : String(fulfillmentError),
         });

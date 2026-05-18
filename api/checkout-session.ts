@@ -1,6 +1,14 @@
 import Stripe from "stripe";
-import { checkoutSessionAllowsAccess, enforceIpRateLimit, getStripe, getStripeId, getSubscriptionStatus, sendError, sendJson } from "./_utils.js";
-import { fulfillCheckoutSession } from "./stripe/fulfillment.js";
+import {
+  checkoutSessionAllowsAccess,
+  enforceIpRateLimit,
+  getStripe,
+  getStripeId,
+  getSubscriptionStatus,
+  sendError,
+  sendJson,
+  verifyFirebaseUserMatches,
+} from "./_utils.js";
 
 export default async function handler(req: any, res: any) {
   if (req.method !== "GET") {
@@ -25,6 +33,7 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    const user = await verifyFirebaseUserMatches(req, userId);
     const stripe = getStripe();
     const [session, lineItems] = await Promise.all([
       stripe.checkout.sessions.retrieve(sessionId, { expand: ["subscription"] }),
@@ -32,7 +41,7 @@ export default async function handler(req: any, res: any) {
     ]);
 
     const sessionUserId = session.client_reference_id || session.metadata?.userId;
-    if (typeof userId === "string" && sessionUserId !== userId) {
+    if (sessionUserId !== user.uid) {
       return sendJson(res, 403, { error: "Checkout Session does not belong to this user" });
     }
 
@@ -42,6 +51,7 @@ export default async function handler(req: any, res: any) {
 
     if (unlocked) {
       try {
+        const { fulfillCheckoutSession } = await import("./stripe/fulfillment.js");
         const fulfillment = await fulfillCheckoutSession(stripe, session, "checkout.session.verified");
         serverFulfilled = fulfillment.handled;
       } catch (fulfillmentError) {

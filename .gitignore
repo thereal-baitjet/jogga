@@ -7,3 +7,5 @@ coverage/
 .env*
 !.env.example
 .vercel
+.env*.local
+.strava_tokens.local.json

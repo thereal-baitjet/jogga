@@ -1,6 +1,7 @@
 import { addDays, isAfter } from 'date-fns';
 import { ExperienceLevel, GoalType, UserProfile, Workout, WorkoutType } from './types';
 import { daysBetweenDates, parseLocalDate, todayDate, toISODate } from './lib/date';
+import { getNicheConfig } from './config/joggaStrategy';
 
 export const WORKOUT_DESCRIPTIONS: Record<WorkoutType, string> = {
   'Easy run': 'Build base aerobic fitness. You should be able to hold a conversation.',
@@ -39,6 +40,63 @@ function normalizeExperienceLevel(value: unknown): ExperienceLevel {
   return EXPERIENCE_LEVELS.includes(value as ExperienceLevel) ? value as ExperienceLevel : 'beginner';
 }
 
+function getPositiveNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function getStravaAdjustedMileage(profile: UserProfile) {
+  const selectedMileage = normalizeWeeklyMileage(profile.weeklyMileagePreference);
+  const recentDistanceKm = getPositiveNumber(profile.stravaRecentDistanceKm);
+  if (!recentDistanceKm) return selectedMileage;
+
+  // Strava/Runna competitive context May 2026: use Strava Free as private
+  // context for Jogga planning, never as a social or premium dependency.
+  const stravaWeeklyKm = recentDistanceKm / 4;
+  return normalizeWeeklyMileage(Math.max(selectedMileage * 0.75, stravaWeeklyKm));
+}
+
+function getNicheVolumeMultiplier(profile: UserProfile) {
+  switch (profile.niche) {
+    case 'postpartum_return':
+      return 0.65;
+    case 'masters_50_plus':
+      return 0.9;
+    case 'ultra_100k':
+      return 1.15;
+    default:
+      return 1;
+  }
+}
+
+function getLoadDamping(profile: UserProfile) {
+  const recentLoad = getPositiveNumber(profile.stravaRecentLoad);
+  if (!recentLoad) return 1;
+  if (recentLoad >= 90) return 0.82;
+  if (recentLoad >= 65) return 0.9;
+  return 1;
+}
+
+function getNicheInstruction(profile: UserProfile, type: WorkoutType) {
+  switch (profile.niche) {
+    case 'postpartum_return':
+      return type === 'Strength session' || type === 'Mobility/recovery session'
+        ? 'Prioritize pelvic floor, breathing, and core control; stop for heaviness, leaking, pain, or pressure.'
+        : 'Keep this conversational and symptom-aware; no bounce-back pressure.';
+    case 'masters_50_plus':
+      return type === 'Strength session'
+        ? 'Emphasize single-leg strength, calves, hips, and controlled tempo.'
+        : 'Keep the effort repeatable and protect recovery before chasing pace.';
+    case 'ultra_100k':
+      return type === 'Long run' || type === 'Hill workout'
+        ? 'Include vert, fueling practice, and terrain-specific pacing.'
+        : 'Build durability without turning every run into a race.';
+    case 'anti_social_runner':
+      return 'Private by default: this workout is for your consistency, not a feed.';
+    default:
+      return '';
+  }
+}
+
 export function generatePlan(profile: UserProfile): Workout[] {
   const workouts: Workout[] = [];
   const startDate = todayDate();
@@ -50,9 +108,11 @@ export function generatePlan(profile: UserProfile): Workout[] {
   const weeks = Math.max(4, Math.ceil((daysToGoal + 1) / 7));
   
   const preferredDays = normalizePreferredDays(profile.preferredDays);
-  const baseMileage = normalizeWeeklyMileage(profile.weeklyMileagePreference);
+  const baseMileage = getStravaAdjustedMileage(profile);
   const goalType = normalizeGoalType(profile.goalType);
   const experienceLevel = normalizeExperienceLevel(profile.experienceLevel);
+  const nicheVolumeMult = getNicheVolumeMultiplier(profile);
+  const loadDamping = getLoadDamping(profile);
 
   // Distance multipliers based on goal
   const goalMultipliers: Record<string, number> = {
@@ -90,7 +150,7 @@ export function generatePlan(profile: UserProfile): Workout[] {
 
     // Taper logic: reduce volume in the last 2 weeks before goal
     const taperMult = w >= weeks - 2 ? 0.6 : 1.0;
-    const finalMult = volumeMult * taperMult * mult;
+    const finalMult = volumeMult * taperMult * mult * nicheVolumeMult * loadDamping;
 
     for (let d = 0; d < 7; d++) {
       const date = addDays(startDate, w * 7 + d);
@@ -140,10 +200,50 @@ export function generatePlan(profile: UserProfile): Workout[] {
           pace = paces.easy;
           effort = 3;
         }
+
+        if (profile.niche === 'postpartum_return') {
+          if (type === 'Interval session' || type === 'Tempo run') {
+            type = 'Easy run';
+            pace = paces.easy;
+            effort = 3;
+          }
+          if (workoutIndex === 0 && w % 2 === 0) {
+            type = 'Mobility/recovery session';
+            distance = 0;
+            duration = 25;
+            pace = '';
+            effort = 2;
+          }
+          distance = distance > 0 ? Math.min(distance, getNicheConfig('postpartum_return').planRules.maxWeeklyMileageStartKm) : 0;
+        }
+
+        if (profile.niche === 'masters_50_plus' && workoutIndex === 1 && totalWorkouts >= 3 && w % 2 === 0) {
+          type = 'Strength session';
+          distance = 0;
+          duration = 35;
+          pace = '';
+          effort = 5;
+        }
+
+        if (profile.niche === 'ultra_100k') {
+          if (type === 'Interval session') {
+            type = 'Hill workout';
+            pace = paces.easy;
+            effort = 7;
+          }
+          if (type === 'Long run') {
+            duration = Math.min(duration * 1.25, 8 * 60);
+          }
+        }
       }
 
       if (type) {
         const dateStr = toISODate(date);
+        const instructions = [
+          WORKOUT_DESCRIPTIONS[type] || '',
+          getNicheInstruction(profile, type),
+        ].filter(Boolean).join(' ');
+
         workouts.push({
           id: `plan-${dateStr}`,
           date: dateStr,
@@ -152,7 +252,7 @@ export function generatePlan(profile: UserProfile): Workout[] {
           distanceTarget: distance > 0 ? Number(distance.toFixed(1)) : undefined,
           paceTarget: pace || undefined,
           effortTarget: effort,
-          instructions: WORKOUT_DESCRIPTIONS[type] || '',
+          instructions,
           status: 'planned'
         });
       }

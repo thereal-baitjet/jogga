@@ -107,11 +107,11 @@ service cloud.firestore {
     // ===============================================================
 
     function allowedUserFields() {
-      return ['id', 'uid', 'name', 'email', 'displayName', 'photoURL', 'authProvider', 'profileCompleted', 'createdAt', 'updatedAt', 'lastLoginAt', 'goalType', 'goalDate', 'experienceLevel', 'preferredDays', 'weeklyMileagePreference', 'isUnlocked', 'readinessScore', 'role', 'isHealthConnected', 'healthProvider', 'stripeCustomerId', 'stripeSubscriptionId', 'stripePriceId', 'subscriptionStatus', 'subscriptionPlan', 'subscriptionVerifiedAt', 'accessSource'];
+      return ['id', 'uid', 'name', 'email', 'displayName', 'photoURL', 'authProvider', 'profileCompleted', 'createdAt', 'updatedAt', 'lastLoginAt', 'niche', 'privacyDefault', 'socialFeaturesDisabled', 'goalType', 'goalDate', 'experienceLevel', 'preferredDays', 'weeklyMileagePreference', 'isUnlocked', 'readinessScore', 'role', 'isHealthConnected', 'healthProvider', 'isStravaConnected', 'stravaAthleteId', 'stravaAthleteName', 'stravaConnectedAt', 'stravaLastSyncAt', 'stravaRecentRunCount', 'stravaRecentDistanceKm', 'stravaRecentElevationMeters', 'stravaRecentDurationHours', 'stravaRecentLoad', 'stripeCustomerId', 'stripeSubscriptionId', 'stripePriceId', 'subscriptionStatus', 'subscriptionPlan', 'subscriptionVerifiedAt', 'accessSource'];
     }
 
     function ownerWritableUserFields() {
-      return ['id', 'uid', 'name', 'email', 'displayName', 'photoURL', 'authProvider', 'profileCompleted', 'createdAt', 'updatedAt', 'lastLoginAt', 'goalType', 'goalDate', 'experienceLevel', 'preferredDays', 'weeklyMileagePreference', 'readinessScore', 'isHealthConnected', 'healthProvider'];
+      return ['id', 'uid', 'name', 'email', 'displayName', 'photoURL', 'authProvider', 'profileCompleted', 'createdAt', 'updatedAt', 'lastLoginAt', 'niche', 'privacyDefault', 'socialFeaturesDisabled', 'goalType', 'goalDate', 'experienceLevel', 'preferredDays', 'weeklyMileagePreference', 'readinessScore', 'isHealthConnected', 'healthProvider', 'isStravaConnected', 'stravaAthleteId', 'stravaAthleteName', 'stravaConnectedAt', 'stravaLastSyncAt', 'stravaRecentRunCount', 'stravaRecentDistanceKm', 'stravaRecentElevationMeters', 'stravaRecentDurationHours', 'stravaRecentLoad'];
     }
 
     function allowedWorkoutFields() {
@@ -129,6 +129,9 @@ service cloud.firestore {
              missingOrString(data, 'createdAt', 100) &&
              missingOrString(data, 'updatedAt', 100) &&
              missingOrString(data, 'lastLoginAt', 100) &&
+             missingOrString(data, 'niche', 50) &&
+             missingOrString(data, 'privacyDefault', 50) &&
+             missingOrList(data, 'socialFeaturesDisabled') &&
              missingOrString(data, 'goalType', 50) &&
              missingOrString(data, 'goalDate', 50) &&
              missingOrString(data, 'experienceLevel', 50) &&
@@ -137,8 +140,18 @@ service cloud.firestore {
              missingOrBool(data, 'profileCompleted') &&
              missingOrBool(data, 'isUnlocked') &&
              missingOrBool(data, 'isHealthConnected') &&
+             missingOrBool(data, 'isStravaConnected') &&
              missingOrMap(data, 'readinessScore') &&
              missingOrString(data, 'healthProvider', 50) &&
+             missingOrNumber(data, 'stravaAthleteId') &&
+             missingOrString(data, 'stravaAthleteName', 100) &&
+             missingOrString(data, 'stravaConnectedAt', 100) &&
+             missingOrString(data, 'stravaLastSyncAt', 100) &&
+             missingOrNumber(data, 'stravaRecentRunCount') &&
+             missingOrNumber(data, 'stravaRecentDistanceKm') &&
+             missingOrNumber(data, 'stravaRecentElevationMeters') &&
+             missingOrNumber(data, 'stravaRecentDurationHours') &&
+             missingOrNumber(data, 'stravaRecentLoad') &&
              missingOrString(data, 'stripeCustomerId', 100) &&
              missingOrString(data, 'stripeSubscriptionId', 100) &&
              missingOrString(data, 'stripePriceId', 100) &&

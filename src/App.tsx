@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { Suspense, useState, useEffect, useRef } from 'react';
 import { UserProfile, Workout, ReadinessScore, WorkoutResult, Achievement, HealthMetric, MarathonReadyingEvent, LiveWorkoutData } from './types';
 import { calculateReadiness } from './services/readinessService';
 import {
@@ -11,17 +11,7 @@ import {
   hasRenderableTrainingPlan,
   mergeWorkoutPlans,
 } from './services/planService';
-import Onboarding from './components/Onboarding';
-import Dashboard from './components/Dashboard';
-import WorkoutDetail from './components/WorkoutDetail';
-import PostRunCheckIn from './components/PostRunCheckIn';
-import PlanView from './components/PlanView';
-import LiveWorkout from './components/LiveWorkout';
-import ProfileView from './components/ProfileView';
-import Subscription from './components/Subscription';
 import LandingPage from './components/LandingPage';
-import AchievementsView from './components/AchievementsView';
-import HealthMetricsView from './components/HealthMetricsView';
 import MarathonReadyingPulse from './components/MarathonReadyingPulse';
 import { AnimatePresence, motion } from 'motion/react';
 import InstallPrompt from './components/InstallPrompt';
@@ -38,7 +28,7 @@ import {
   User
 } from 'firebase/auth';
 import { doc, setDoc, collection, onSnapshot, query, writeBatch, getDocs, runTransaction } from 'firebase/firestore';
-import { defaultGoalDate, isDateBeforeToday, parseLocalDate, todayISO } from './lib/date';
+import { isDateBeforeToday, parseLocalDate, todayISO } from './lib/date';
 import { buildMarathonReadyingProfile, buildWorkoutReadyingEvent } from './services/marathonReadyingService';
 import { getActualDistance } from './services/runMetricsService';
 import { isCordovaRuntime, reauthenticateWithCordovaGoogle, signInWithCordovaGoogle } from './services/cordovaOAuthService';
@@ -47,7 +37,19 @@ import { setAnalyticsUser, trackEvent, trackPageView } from './services/analytic
 import { buildHealthMetricCards, normalizeHealthSyncResponse } from './services/healthMetricsService';
 import { CHECKOUT_INTENT_STORAGE_KEY, CheckoutIntent, normalizeBillingPlanId } from './config/billing';
 
-type Screen = 'onboarding' | 'dashboard' | 'workout-detail' | 'live-workout' | 'post-run' | 'plan-view' | 'subscription' | 'profile' | 'achievements' | 'health' | 'auth';
+const Onboarding = React.lazy(() => import('./components/Onboarding'));
+const Dashboard = React.lazy(() => import('./components/Dashboard'));
+const WorkoutDetail = React.lazy(() => import('./components/WorkoutDetail'));
+const PostRunCheckIn = React.lazy(() => import('./components/PostRunCheckIn'));
+const PlanView = React.lazy(() => import('./components/PlanView'));
+const LiveWorkout = React.lazy(() => import('./components/LiveWorkout'));
+const ProfileView = React.lazy(() => import('./components/ProfileView'));
+const Subscription = React.lazy(() => import('./components/Subscription'));
+const AchievementsView = React.lazy(() => import('./components/AchievementsView'));
+const HealthMetricsView = React.lazy(() => import('./components/HealthMetricsView'));
+const ExpensesDashboard = React.lazy(() => import('./components/ExpensesDashboard'));
+
+type Screen = 'onboarding' | 'dashboard' | 'workout-detail' | 'live-workout' | 'post-run' | 'plan-view' | 'subscription' | 'profile' | 'achievements' | 'health' | 'expenses' | 'auth';
 
 const SCREEN_PATHS: Record<Screen, string> = {
   auth: '/auth',
@@ -61,6 +63,7 @@ const SCREEN_PATHS: Record<Screen, string> = {
   profile: '/profile',
   achievements: '/achievements',
   health: '/health',
+  expenses: '/expenses',
 };
 
 const SCREEN_TITLES: Record<Screen, string> = {
@@ -75,9 +78,39 @@ const SCREEN_TITLES: Record<Screen, string> = {
   profile: 'Jogga - Profile',
   achievements: 'Jogga - Achievements',
   health: 'Jogga - Health Metrics',
+  expenses: 'Jogga - Pricing Dashboard',
 };
 
 const STRIPE_BILLING_PORTAL_URL = import.meta.env.VITE_STRIPE_BILLING_PORTAL_URL || 'https://billing.stripe.com/p/login/4gM7sL6tEfHD0P7cdw1wY00';
+const SCREEN_MOTION = {
+  initial: { opacity: 0, y: 12 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -8 },
+  transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1] as [number, number, number, number] },
+};
+
+function createEmptyReadiness(): ReadinessScore {
+  return {
+    score: 0,
+    consistency: 0,
+    fatigue: 0,
+    progress: 0,
+    streak: 0,
+    trend: 0,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function ScreenLoader() {
+  return (
+    <div className="min-h-[100dvh] flex items-center justify-center bg-zinc-950 text-zinc-100">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 border-2 border-zinc-100 border-t-transparent rounded-full animate-spin" />
+        <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Loading Jogga</p>
+      </div>
+    </div>
+  );
+}
 
 function isCheckoutIntent(value: unknown): value is CheckoutIntent {
   if (typeof value !== 'object' || value === null) return false;
@@ -238,7 +271,12 @@ function isCompleteUserProfile(profile: Partial<UserProfile> | null | undefined)
 }
 
 function hasPremiumAccess(profile: Partial<UserProfile> | null | undefined) {
-  return hasActiveSubscription(profile);
+  return (
+    hasActiveSubscription(profile) ||
+    profile?.accessSource === 'admin' ||
+    profile?.accessSource === 'whitelist' ||
+    profile?.subscriptionStatus === 'whitelisted'
+  );
 }
 
 function getPrimaryAuthProvider(currentUser: User) {
@@ -309,6 +347,7 @@ export default function App() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [databaseError, setDatabaseError] = useState<string | null>(null);
+  const [appToast, setAppToast] = useState<string | null>(null);
   const [currentDate, setCurrentDate] = useState(() => todayISO());
   const [screen, setScreen] = useState<Screen>('auth');
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -404,7 +443,12 @@ export default function App() {
 
     setIsRestoringSubscriptionAccess(true);
     try {
-      const response = await fetch(`/api/subscription-status?userId=${encodeURIComponent(user.uid)}`);
+      const idToken = await user.getIdToken();
+      const response = await fetch(`/api/subscription-status?userId=${encodeURIComponent(user.uid)}`, {
+        headers: {
+          'Authorization': `Bearer ${idToken}`,
+        },
+      });
       const data = await response.json();
 
       if (!response.ok) {
@@ -472,6 +516,13 @@ export default function App() {
   useEffect(() => {
     setAnalyticsUser(user?.uid);
   }, [user?.uid]);
+
+  useEffect(() => {
+    if (!appToast) return;
+
+    const timeout = window.setTimeout(() => setAppToast(null), 3200);
+    return () => window.clearTimeout(timeout);
+  }, [appToast]);
 
   useEffect(() => {
     if (isUnlocked && pendingCheckoutIntent) {
@@ -584,21 +635,12 @@ export default function App() {
     syncedAt: new Date().toISOString(),
     persisted: false,
   }));
-  const [readiness, setReadiness] = useState<ReadinessScore>({
-    score: 84,
-    consistency: 91,
-    fatigue: 45,
-    progress: 0,
-    streak: 0,
-    trend: 4,
-    updatedAt: new Date().toISOString()
-  });
+  const [readiness, setReadiness] = useState<ReadinessScore>(() => createEmptyReadiness());
   const marathonReadying = React.useMemo(() => buildMarathonReadyingProfile(renderedPlan, achievements), [achievements, renderedPlan]);
   const clearReadyingEvent = React.useCallback(() => setReadyingEvent(null), []);
 
   // Calculate Readiness based on recent workouts
   useEffect(() => {
-    if (plan.length === 0) return;
     setReadiness(calculateReadiness(plan));
   }, [plan]);
 
@@ -627,6 +669,56 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!user) return;
+
+    let cancelled = false;
+
+    const checkFreeAccess = async () => {
+      try {
+        const idToken = await user.getIdToken();
+        const response = await fetch('/api/free-access/status', {
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+          },
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Free access check failed.');
+        }
+
+        if (!data.unlocked || cancelled) return;
+
+        const now = new Date().toISOString();
+        const freeAccessUpdate: Partial<UserProfile> = {
+          isUnlocked: true,
+          accessSource: data.accessSource || 'whitelist',
+          subscriptionStatus: data.subscriptionStatus || 'whitelisted',
+          subscriptionPlan: data.subscriptionPlan || 'tester',
+          subscriptionVerifiedAt: data.subscriptionVerifiedAt || now,
+          updatedAt: now,
+        };
+
+        setIsUnlocked(true);
+        setUserRecord(previousRecord => ({ ...(previousRecord || {}), ...freeAccessUpdate }));
+        setProfile(previousProfile => previousProfile ? { ...previousProfile, ...freeAccessUpdate } : previousProfile);
+        trackEvent('free_access_verified', {
+          access_source: freeAccessUpdate.accessSource || 'whitelist',
+          persisted: Boolean(data.persisted),
+        });
+      } catch (error) {
+        console.error('Free access check failed', error);
+      }
+    };
+
+    void checkFreeAccess();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  useEffect(() => {
     let isMounted = true;
 
     authPersistenceReady
@@ -651,6 +743,8 @@ export default function App() {
   // OAuth Message Listener
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
         if (event.data.provider === 'google') {
           setHealthTokens(event.data.tokens);
@@ -664,6 +758,30 @@ export default function App() {
             setDoc(doc(db, 'users', user.uid), updatedProfile, { merge: true });
           }
         }
+
+        if (event.data.provider === 'strava') {
+          const connection = event.data.connection || {};
+          const updatedProfile = profile ? {
+            ...profile,
+            ...connection,
+            isStravaConnected: true,
+          } : profile;
+
+          if (updatedProfile) {
+            setProfile(updatedProfile);
+            setUserRecord(previousRecord => previousRecord ? { ...previousRecord, ...connection, isStravaConnected: true } : previousRecord);
+          }
+
+          trackEvent('strava_connected', {
+            requires_premium: false,
+            recent_run_count: connection.stravaRecentRunCount || 0,
+          });
+          setAppToast('Strava Free connected. Runs imported privately.');
+        }
+      }
+
+      if (event.data?.type === 'OAUTH_AUTH_ERROR' && event.data.provider === 'strava') {
+        setAppToast('Strava was not connected. Try again when you are ready.');
       }
     };
     window.addEventListener('message', handleMessage);
@@ -816,6 +934,38 @@ export default function App() {
   const handleSyncHealth = async () => {
     const accessToken = healthTokens?.access_token || await requestGoogleHealthAccess();
     await syncGoogleHealthWithToken(accessToken);
+  };
+
+  const handleConnectStrava = async () => {
+    const currentUser = auth.currentUser || user;
+    const idToken = await currentUser?.getIdToken();
+
+    if (!idToken) {
+      throw new Error('Sign in before connecting Strava Free.');
+    }
+
+    const response = await fetch('/api/auth/strava/url', {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${idToken}`,
+      },
+    });
+    const data = await response.json();
+
+    if (!response.ok || typeof data.url !== 'string') {
+      throw new Error(data.error || 'Strava connection is not configured yet.');
+    }
+
+    const popup = window.open(data.url, 'jogga-strava-oauth', 'width=540,height=720,noopener=false');
+    if (!popup) {
+      throw new Error('Allow pop-ups to connect Strava Free.');
+    }
+
+    trackEvent('strava_connect_started', {
+      requires_premium: false,
+      source: screenRef.current,
+    });
+    popup.focus();
   };
 
   // Firestore Data Sync
@@ -1046,7 +1196,12 @@ export default function App() {
 
     const verifyCheckout = async () => {
       try {
-        const response = await fetch(`/api/checkout-session?sessionId=${encodeURIComponent(sessionId)}&userId=${encodeURIComponent(user.uid)}`);
+        const idToken = await user.getIdToken();
+        const response = await fetch(`/api/checkout-session?sessionId=${encodeURIComponent(sessionId)}&userId=${encodeURIComponent(user.uid)}`, {
+          headers: {
+            'Authorization': `Bearer ${idToken}`,
+          },
+        });
         const data = await response.json();
 
         if (!response.ok) {
@@ -1101,7 +1256,12 @@ export default function App() {
 
     const recoverExistingSubscription = async () => {
       try {
-        const response = await fetch(`/api/subscription-status?userId=${encodeURIComponent(user.uid)}`);
+        const idToken = await user.getIdToken();
+        const response = await fetch(`/api/subscription-status?userId=${encodeURIComponent(user.uid)}`, {
+          headers: {
+            'Authorization': `Bearer ${idToken}`,
+          },
+        });
         const data = await response.json();
 
         if (!response.ok) {
@@ -1162,9 +1322,11 @@ export default function App() {
     }
 
     try {
+      const idToken = await user.getIdToken();
       const response = await fetch('/api/create-billing-portal-session', {
         method: 'POST',
         headers: {
+          'Authorization': `Bearer ${idToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -1376,12 +1538,22 @@ export default function App() {
   };
 
   const handleStartWorkout = () => {
-    if (selectedWorkout) {
-      trackEvent('workout_started', {
+    if (!selectedWorkout) return;
+
+    if (selectedWorkout.status === 'completed') {
+      trackEvent('workout_rerun_blocked', {
         workout_type: selectedWorkout.type,
-        workout_status: selectedWorkout.status,
+        workout_date: selectedWorkout.date,
+        same_day: selectedWorkout.date === currentDate,
       });
+      setScreen('workout-detail');
+      return;
     }
+
+    trackEvent('workout_started', {
+      workout_type: selectedWorkout.type,
+      workout_status: selectedWorkout.status,
+    });
     setScreen('live-workout');
   };
 
@@ -1459,11 +1631,12 @@ export default function App() {
   const handleProfileUpdate = async (updatedProfile: UserProfile) => {
     if (!user) return;
     try {
+      const planReadyProfile = getPlanReadyProfile(updatedProfile);
       const profileToSave = {
-        ...updatedProfile,
-        goalDate: isDateBeforeToday(updatedProfile.goalDate) ? defaultGoalDate() : updatedProfile.goalDate,
+        ...planReadyProfile,
+        name: updatedProfile.name.trim(),
         readinessScore: readiness,
-        displayName: updatedProfile.name,
+        displayName: updatedProfile.name.trim(),
         profileCompleted: true,
         updatedAt: new Date().toISOString(),
       };
@@ -1490,10 +1663,7 @@ export default function App() {
     }
     
     setIsGeneratingPlan(true);
-    const profileForPlan = {
-      ...profile,
-      goalDate: isDateBeforeToday(profile.goalDate) ? defaultGoalDate() : profile.goalDate,
-    };
+    const profileForPlan = getPlanReadyProfile(profile);
     const newPlan = generatePlanForProfile(profileForPlan);
     
     try {
@@ -1535,7 +1705,7 @@ export default function App() {
       setPlan(mergeWorkoutPlans(preservedWorkouts, newPlan));
       setDatabaseError(null);
       setIsGeneratingPlan(false);
-      alert('Training plan has been updated based on your new goals!');
+      setAppToast('Training plan updated for your current goal.');
     } catch (error) {
       console.error('Failed to regenerate plan', error);
       setIsGeneratingPlan(false);
@@ -1546,7 +1716,7 @@ export default function App() {
 
   return (
     <div className="bg-zinc-950 min-h-screen font-sans selection:bg-zinc-100 selection:text-zinc-900 relative overflow-hidden">
-      {showInstallPrompt && deferredPrompt && (
+      {showInstallPrompt && deferredPrompt && screen === 'dashboard' && (
         <InstallPrompt 
           onInstall={handleInstall} 
           onDismiss={() => setShowInstallPrompt(false)} 
@@ -1557,43 +1727,41 @@ export default function App() {
           {databaseError}
         </div>
       )}
+      <AnimatePresence>
+        {appToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.2 }}
+            role="status"
+            className="fixed left-4 right-4 top-4 z-[115] mx-auto max-w-md rounded-2xl border border-green-400/20 bg-green-950/95 px-4 py-3 text-sm text-green-100 shadow-2xl backdrop-blur"
+          >
+            {appToast}
+          </motion.div>
+        )}
+      </AnimatePresence>
       <MarathonReadyingPulse event={readyingEvent} onComplete={clearReadyingEvent} />
+      <Suspense fallback={<ScreenLoader />}>
       <AnimatePresence mode="wait">
         {!isAuthReady ? (
-          <motion.div
-            key="loading"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="min-h-[100dvh] flex items-center justify-center"
-          >
-            <div className="w-8 h-8 border-2 border-zinc-100 border-t-transparent rounded-full animate-spin" />
+          <motion.div key="loading" {...SCREEN_MOTION}>
+            <ScreenLoader />
           </motion.div>
         ) : screen === 'auth' ? (
-          <motion.div
-            key="auth"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
+          <motion.div key="auth" {...SCREEN_MOTION}>
             <LandingPage onStart={handleLandingStart} authError={authError} />
           </motion.div>
         ) : screen === 'onboarding' ? (
-          <motion.div
-            key="onboarding"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <Onboarding onComplete={handleOnboardingComplete} />
+          <motion.div key="onboarding" {...SCREEN_MOTION}>
+            <Onboarding
+              onComplete={handleOnboardingComplete}
+              onConnectStrava={handleConnectStrava}
+              isStravaConnected={Boolean(profile?.isStravaConnected || userRecord?.isStravaConnected)}
+            />
           </motion.div>
         ) : screen === 'dashboard' && profile ? (
-          <motion.div
-            key="dashboard"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
+          <motion.div key="dashboard" {...SCREEN_MOTION}>
             <Dashboard 
               profile={profile} 
               plan={renderedPlan} 
@@ -1608,12 +1776,7 @@ export default function App() {
             />
           </motion.div>
         ) : screen === 'workout-detail' && selectedWorkout ? (
-          <motion.div
-            key="workout-detail"
-            initial={{ opacity: 0, x: 100 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -100 }}
-          >
+          <motion.div key="workout-detail" {...SCREEN_MOTION}>
             <WorkoutDetail 
               workout={selectedWorkout} 
               onBack={() => setScreen('dashboard')}
@@ -1621,12 +1784,7 @@ export default function App() {
             />
           </motion.div>
         ) : screen === 'live-workout' && selectedWorkout ? (
-          <motion.div
-            key="live-workout"
-            initial={{ opacity: 0, scale: 1.1 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-          >
+          <motion.div key="live-workout" {...SCREEN_MOTION}>
             <LiveWorkout 
               workout={selectedWorkout} 
               onComplete={handleLiveWorkoutComplete}
@@ -1634,12 +1792,7 @@ export default function App() {
             />
           </motion.div>
         ) : screen === 'post-run' && selectedWorkout ? (
-          <motion.div
-            key="post-run"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 1.1 }}
-          >
+          <motion.div key="post-run" {...SCREEN_MOTION}>
             <PostRunCheckIn 
               workout={selectedWorkout} 
               liveData={liveWorkoutData}
@@ -1647,12 +1800,7 @@ export default function App() {
             />
           </motion.div>
         ) : screen === 'plan-view' && profile ? (
-          <motion.div
-            key="plan-view"
-            initial={{ opacity: 0, y: 100 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 100 }}
-          >
+          <motion.div key="plan-view" {...SCREEN_MOTION}>
             <PlanView 
               workouts={renderedPlan} 
               goalDate={getPlanReadyProfile(profile).goalDate}
@@ -1669,12 +1817,7 @@ export default function App() {
             />
           </motion.div>
         ) : screen === 'subscription' ? (
-          <motion.div
-            key="subscription"
-            initial={{ opacity: 0, y: 100 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 100 }}
-          >
+          <motion.div key="subscription" {...SCREEN_MOTION}>
             <Subscription 
               onBack={() => setScreen(profile && isUnlocked ? 'dashboard' : 'onboarding')} 
               isUnlocked={isUnlocked} 
@@ -1688,12 +1831,7 @@ export default function App() {
             />
           </motion.div>
         ) : screen === 'profile' && profile ? (
-          <motion.div
-            key="profile"
-            initial={{ opacity: 0, x: -100 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 100 }}
-          >
+          <motion.div key="profile" {...SCREEN_MOTION}>
             <ProfileView 
               profile={profile} 
               onBack={() => setScreen('dashboard')} 
@@ -1702,16 +1840,17 @@ export default function App() {
               onLogout={handleLogout}
               onInstall={deferredPrompt ? handleInstall : undefined}
               onManageSubscription={handleManageSubscription}
+              onViewExpenses={() => setScreen('expenses')}
+              onConnectStrava={handleConnectStrava}
               marathonReadying={marathonReadying}
             />
           </motion.div>
+        ) : screen === 'expenses' ? (
+          <motion.div key="expenses" {...SCREEN_MOTION}>
+            <ExpensesDashboard onBack={() => setScreen('profile')} />
+          </motion.div>
         ) : screen === 'achievements' ? (
-          <motion.div
-            key="achievements"
-            initial={{ opacity: 0, x: 100 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -100 }}
-          >
+          <motion.div key="achievements" {...SCREEN_MOTION}>
             <AchievementsView 
               achievements={achievements} 
               marathonReadying={marathonReadying}
@@ -1719,12 +1858,7 @@ export default function App() {
             />
           </motion.div>
         ) : screen === 'health' && profile ? (
-          <motion.div
-            key="health"
-            initial={{ opacity: 0, x: 100 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -100 }}
-          >
+          <motion.div key="health" {...SCREEN_MOTION}>
             <HealthMetricsView 
               metrics={healthMetrics} 
               profile={profile}
@@ -1735,6 +1869,7 @@ export default function App() {
           </motion.div>
         ) : null}
       </AnimatePresence>
+      </Suspense>
 
       {/* Plan Generation Overlay */}
       <AnimatePresence>
