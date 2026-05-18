@@ -195,6 +195,31 @@ interface SubscriptionAccessResponse {
   planId?: string | null;
 }
 
+interface FreeAccessResponse {
+  unlocked?: boolean;
+  accessSource?: string | null;
+  subscriptionStatus?: string | null;
+  subscriptionPlan?: string | null;
+  subscriptionVerifiedAt?: string | null;
+  persisted?: boolean;
+}
+
+async function fetchFreeAccessStatus(currentUser: User): Promise<FreeAccessResponse> {
+  const idToken = await currentUser.getIdToken();
+  const response = await fetch('/api/free-access/status', {
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
+  });
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || 'Free access check failed.');
+  }
+
+  return data;
+}
+
 function buildFirestoreErrorInfo(error: unknown, operationType: OperationType, path: string | null): FirestoreErrorInfo {
   return {
     error: error instanceof Error ? error.message : String(error),
@@ -438,11 +463,46 @@ export default function App() {
     return false;
   };
 
+  const applyFreeAccess = (data: FreeAccessResponse) => {
+    if (!user || !data.unlocked) return false;
+
+    const now = new Date().toISOString();
+    const freeAccessUpdate: Partial<UserProfile> = {
+      isUnlocked: true,
+      accessSource: data.accessSource || 'whitelist',
+      subscriptionStatus: data.subscriptionStatus || 'whitelisted',
+      subscriptionPlan: data.subscriptionPlan || 'tester',
+      subscriptionVerifiedAt: data.subscriptionVerifiedAt || now,
+      updatedAt: now,
+    };
+    const mergedRecord = { ...userRecord, ...profile, ...freeAccessUpdate };
+
+    setIsUnlocked(true);
+    setUserRecord(mergedRecord);
+    if (isCompleteUserProfile(mergedRecord)) {
+      setProfile(mergedRecord);
+      return true;
+    }
+
+    return false;
+  };
+
   const restoreSubscriptionAccess = async () => {
     if (!user) return false;
 
     setIsRestoringSubscriptionAccess(true);
     try {
+      const freeAccess = await fetchFreeAccessStatus(user);
+      if (freeAccess.unlocked) {
+        const hasCompleteProfile = applyFreeAccess(freeAccess);
+        trackEvent('free_access_restored', {
+          access_source: freeAccess.accessSource || 'whitelist',
+          persisted: Boolean(freeAccess.persisted),
+        });
+        setScreen(hasCompleteProfile ? 'dashboard' : 'onboarding');
+        return true;
+      }
+
       const idToken = await user.getIdToken();
       const response = await fetch(`/api/subscription-status?userId=${encodeURIComponent(user.uid)}`, {
         headers: {
@@ -675,35 +735,16 @@ export default function App() {
 
     const checkFreeAccess = async () => {
       try {
-        const idToken = await user.getIdToken();
-        const response = await fetch('/api/free-access/status', {
-          headers: {
-            Authorization: `Bearer ${idToken}`,
-          },
-        });
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Free access check failed.');
-        }
+        const data = await fetchFreeAccessStatus(user);
 
         if (!data.unlocked || cancelled) return;
 
-        const now = new Date().toISOString();
-        const freeAccessUpdate: Partial<UserProfile> = {
-          isUnlocked: true,
-          accessSource: data.accessSource || 'whitelist',
-          subscriptionStatus: data.subscriptionStatus || 'whitelisted',
-          subscriptionPlan: data.subscriptionPlan || 'tester',
-          subscriptionVerifiedAt: data.subscriptionVerifiedAt || now,
-          updatedAt: now,
-        };
-
-        setIsUnlocked(true);
-        setUserRecord(previousRecord => ({ ...(previousRecord || {}), ...freeAccessUpdate }));
-        setProfile(previousProfile => previousProfile ? { ...previousProfile, ...freeAccessUpdate } : previousProfile);
+        const hasCompleteProfile = applyFreeAccess(data);
+        if (screenRef.current === 'auth' || screenRef.current === 'subscription') {
+          setScreen(hasCompleteProfile ? 'dashboard' : 'onboarding');
+        }
         trackEvent('free_access_verified', {
-          access_source: freeAccessUpdate.accessSource || 'whitelist',
+          access_source: data.accessSource || 'whitelist',
           persisted: Boolean(data.persisted),
         });
       } catch (error) {
