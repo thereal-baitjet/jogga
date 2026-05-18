@@ -1,6 +1,11 @@
 import { cert, getApps, initializeApp, type ServiceAccount } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 
+const JOGGA_FIRESTORE_DATABASE_ID =
+  process.env.FIRESTORE_DATABASE_ID ||
+  process.env.FIREBASE_FIRESTORE_DATABASE_ID ||
+  "ai-studio-bfff84eb-1c55-4502-979f-fbba33e66dc9";
+
 function parseServiceAccountJson(rawValue: string) {
   const trimmedValue = rawValue.trim();
   const jsonValue = trimmedValue.startsWith("{")
@@ -46,5 +51,8 @@ export function getFirebaseAdminDb() {
     });
   }
 
-  return getFirestore();
+  // Jogga uses a named Firestore database from Firebase Studio. The frontend
+  // reads firebase-applet-config.json.firestoreDatabaseId, so server writes
+  // must target the same DB or OAuth callbacks fail with Firestore 5 NOT_FOUND.
+  return getFirestore(JOGGA_FIRESTORE_DATABASE_ID);
 }
