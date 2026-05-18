@@ -44,8 +44,8 @@ const aiRateLimitBuckets = new Map<string, { count: number; resetAt: number }>()
 
 function parseDelimitedEnv(value: string | undefined) {
   return (value || "")
-    .split(",")
-    .map(item => item.trim())
+    .split(/[,\s;]+/)
+    .map(item => item.trim().replace(/^['"]|['"]$/g, ""))
     .filter(Boolean);
 }
 

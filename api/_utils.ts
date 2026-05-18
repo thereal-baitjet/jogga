@@ -110,8 +110,8 @@ async function getAdminDb() {
 
 function parseDelimitedEnv(value: string | undefined) {
   return (value || "")
-    .split(",")
-    .map(item => item.trim())
+    .split(/[,\s;]+/)
+    .map(item => item.trim().replace(/^['"]|['"]$/g, ""))
     .filter(Boolean);
 }
 

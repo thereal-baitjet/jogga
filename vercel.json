@@ -39,7 +39,39 @@
     },
     {
       "source": "/api/checkout-session/:sessionId",
-      "destination": "/api/checkout-session?sessionId=:sessionId"
+      "destination": "/api/dispatch?path=checkout-session&sessionId=:sessionId"
+    },
+    {
+      "source": "/api/checkout-session",
+      "destination": "/api/dispatch?path=checkout-session"
+    },
+    {
+      "source": "/api/create-checkout-session",
+      "destination": "/api/dispatch?path=create-checkout-session"
+    },
+    {
+      "source": "/api/create-billing-portal-session",
+      "destination": "/api/dispatch?path=create-billing-portal-session"
+    },
+    {
+      "source": "/api/subscription-status",
+      "destination": "/api/dispatch?path=subscription-status"
+    },
+    {
+      "source": "/api/checkout-redirect",
+      "destination": "/api/dispatch?path=checkout-redirect"
+    },
+    {
+      "source": "/api/auth/strava/url",
+      "destination": "/api/dispatch?path=auth/strava/url"
+    },
+    {
+      "source": "/api/auth/strava/callback",
+      "destination": "/api/dispatch?path=auth/strava/callback"
+    },
+    {
+      "source": "/api/strava/sync",
+      "destination": "/api/dispatch?path=strava/sync"
     },
     {
       "source": "/ai-running-coach",
@@ -119,11 +151,11 @@
     },
     {
       "source": "/auth/strava/callback",
-      "destination": "/api/auth/strava/callback"
+      "destination": "/api/dispatch?path=auth/strava/callback"
     },
     {
       "source": "/auth/strava/callback/",
-      "destination": "/api/auth/strava/callback"
+      "destination": "/api/dispatch?path=auth/strava/callback"
     },
     {
       "source": "/((?!api(?:/|$)).*)",
