@@ -8,6 +8,7 @@ import {
   STRIPE_EMERGENCY_CHECKOUT_LINKS,
 } from '../config/billing';
 import { trackEvent } from '../services/analyticsService';
+import { auth } from '../firebase';
 
 interface SubscriptionProps {
   onBack: () => void;
@@ -40,20 +41,6 @@ function buildEmergencyCheckoutUrl(plan: BillingPlan, userEmail?: string | null)
   }
 }
 
-function buildCheckoutRedirectUrl(plan: BillingPlan, userId: string, userEmail?: string | null, trial = false) {
-  const params = new URLSearchParams({
-    planId: trial ? 'trial' : plan.id,
-    userId,
-    trial: trial ? 'true' : 'false',
-  });
-
-  if (userEmail && userEmail.includes('@')) {
-    params.set('email', userEmail);
-  }
-
-  return `/api/checkout-redirect?${params.toString()}`;
-}
-
 function getBillingPriceSuffix(plan: BillingPlan) {
   return plan.id === 'monthly' ? '/mo' : '/year';
 }
@@ -73,6 +60,7 @@ export default function Subscription({
   const [isManagingBilling, setIsManagingBilling] = useState(false);
   const autoRestoreUserRef = useRef<string | null>(null);
   const plans = BILLING_PLANS;
+  const trialContinuationPrice = `${BILLING_PLANS[0].price}${getBillingPriceSuffix(BILLING_PLANS[0])}`;
 
   const handleRestoreAccess = async (silent = false) => {
     if (!onRestoreAccess || isUnlocked || isRestoringAccess) return;
@@ -107,14 +95,20 @@ export default function Subscription({
     }
   };
 
-  const handleSubscribe = (plan: BillingPlan, trial = false) => {
+  const handleSubscribe = async (plan: BillingPlan, trial = false) => {
     if (isUnlocked) {
       onBack();
       return;
     }
 
-    if (!userId) {
+    const currentUser = auth.currentUser;
+    if (!userId || !currentUser) {
       setError('Sign in before starting checkout.');
+      return;
+    }
+
+    if (currentUser.uid !== userId) {
+      setError('Sign in again before starting checkout.');
       return;
     }
 
@@ -134,10 +128,42 @@ export default function Subscription({
 
     onCheckoutIntentHandled?.();
 
-    const checkoutUrl = buildCheckoutRedirectUrl(plan, userId, userEmail, trial);
-
     try {
-      window.location.assign(checkoutUrl);
+      const idToken = await currentUser.getIdToken();
+      const response = await fetch('/api/create-checkout-session', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${idToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          planId: trial ? 'trial' : plan.id,
+          userId,
+          email: userEmail,
+          trial,
+        }),
+      });
+      const contentType = response.headers.get('content-type') || '';
+
+      if (!contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('Checkout API returned non-JSON response', {
+          status: response.status,
+          bodyStart: text.slice(0, 200),
+        });
+        throw new Error('Checkout API is not reachable. Check deployment routing.');
+      }
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Unable to start checkout.');
+      }
+
+      if (typeof data.url !== 'string' || !data.url.startsWith('https://')) {
+        throw new Error('Stripe did not return a checkout URL.');
+      }
+
+      window.location.assign(data.url);
     } catch (err) {
       console.error('Checkout redirect failed:', err);
 
@@ -165,7 +191,7 @@ export default function Subscription({
         {!isUnlocked ? (
           <div className="w-10" />
         ) : (
-          <button type="button" onClick={onBack} className="p-2 hover:bg-zinc-900 rounded-full transition-colors">
+          <button type="button" onClick={onBack} aria-label="Back" className="p-2 hover:bg-zinc-900 rounded-full transition-colors">
             <ChevronLeft size={24} />
           </button>
         )}
@@ -185,7 +211,7 @@ export default function Subscription({
         </div>
 
         {error && (
-          <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-xs text-red-300 text-center">
+          <div role="alert" className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-xs text-red-300 text-center">
             {error}
           </div>
         )}
@@ -308,6 +334,12 @@ export default function Subscription({
         </div>
 
         <div className="space-y-4 pt-4">
+          <div className="rounded-3xl border border-yellow-400/20 bg-yellow-400/10 p-4 text-center">
+            <div className="text-[10px] font-bold uppercase tracking-widest text-yellow-100">Trial clarity</div>
+            <p className="mt-2 text-xs leading-6 text-zinc-200">
+              Your {FREE_TRIAL_LABEL} starts on the monthly plan and continues at {trialContinuationPrice} unless canceled in Stripe before the trial ends.
+            </p>
+          </div>
           <button
             type="button"
             onClick={() => handleSubscribe(plans[0], true)}
