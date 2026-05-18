@@ -14,6 +14,18 @@ Jogga is a production web app for adaptive running plans, GPS-tracked workouts, 
 
 Live app: [https://jogga.santosautomation.com](https://jogga.santosautomation.com)
 
+## Screenshots
+
+Curated screenshots live in [docs/screenshots](docs/screenshots). Protected app screens use representative Strava-connected demo data so the gallery documents the product without exposing a real account.
+
+| Dashboard | Strava Health Metrics | Onboarding |
+| --- | --- | --- |
+| <img src="docs/screenshots/04-dashboard.png" alt="Jogga dashboard" width="220"> | <img src="docs/screenshots/11-health-metrics-strava.png" alt="Jogga Strava health metrics" width="220"> | <img src="docs/screenshots/03-onboarding.png" alt="Jogga onboarding" width="220"> |
+
+| Training Plan | Profile | Landing |
+| --- | --- | --- |
+| <img src="docs/screenshots/05-plan.png" alt="Jogga training plan" width="220"> | <img src="docs/screenshots/09-profile.png" alt="Jogga profile" width="220"> | <img src="docs/screenshots/01-landing.png" alt="Jogga landing page" width="220"> |
+
 ## What It Does
 
 - Builds personalized running plans from experience level, race goal, target date, preferred training days, and weekly mileage.
