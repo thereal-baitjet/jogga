@@ -1,11 +1,11 @@
 import { generatePlan } from '../constants';
-import { isDateBeforeToday, parseLocalDate, defaultGoalDate, todayISO } from '../lib/date';
+import { isDateAfterToday, parseLocalDate, defaultGoalDate, todayISO } from '../lib/date';
 import { UserProfile, Workout } from '../types';
 
 export function getPlanReadyProfile(profile: UserProfile): UserProfile {
   return {
     ...profile,
-    goalDate: isDateBeforeToday(profile.goalDate) ? defaultGoalDate() : profile.goalDate,
+    goalDate: isDateAfterToday(profile.goalDate) ? profile.goalDate : defaultGoalDate(),
   };
 }
 
@@ -21,7 +21,12 @@ export function hasRenderableTrainingPlan(workouts: Workout[], currentDate = tod
 }
 
 export function hasActiveSubscription(profile: Partial<UserProfile> | null | undefined) {
-  return profile?.subscriptionStatus === 'active' || profile?.subscriptionStatus === 'trialing';
+  return (
+    profile?.subscriptionStatus === 'active' ||
+    profile?.subscriptionStatus === 'trialing' ||
+    profile?.accessSource === 'stripe_subscription' ||
+    profile?.accessSource === 'trial'
+  );
 }
 
 export function hasPriorSubscription(profile: Partial<UserProfile> | null | undefined) {
@@ -38,7 +43,13 @@ export function canUseApp(
   _workouts: Workout[] = [],
   _currentDate = todayISO()
 ) {
-  return hasActiveSubscription(profile);
+  return (
+    hasActiveSubscription(profile) ||
+    profile?.accessSource === 'admin' ||
+    profile?.accessSource === 'whitelist' ||
+    profile?.accessSource === 'free_access' ||
+    profile?.subscriptionStatus === 'whitelisted'
+  );
 }
 
 export function mergeWorkoutPlans(existingWorkouts: Workout[], generatedWorkouts: Workout[]) {

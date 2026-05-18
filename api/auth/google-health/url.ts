@@ -1,4 +1,4 @@
-import { APP_URL, enforceIpRateLimit, GOOGLE_AUTH_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, sendError, sendJson } from "../../_utils.js";
+import { APP_URL, enforceIpRateLimit, enforceSameOrigin, GOOGLE_AUTH_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, sendError, sendJson } from "../../_utils.js";
 
 export default function handler(req: any, res: any) {
   if (req.method !== "GET") {
@@ -12,6 +12,7 @@ export default function handler(req: any, res: any) {
       windowMs: 60 * 1000,
       message: "Too many health connection attempts. Try again shortly.",
     });
+    enforceSameOrigin(req);
   } catch (error) {
     return sendError(res, error);
   }

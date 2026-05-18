@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { Activity, Check, ChevronRight, PlayCircle, ShieldCheck, Sparkles, Target, Zap } from 'lucide-react';
 import { signInWithRedirect } from 'firebase/auth';
@@ -13,55 +13,55 @@ interface LandingPageProps {
 }
 
 const outcomes = [
-  'Miss a run? Jogga recalculates instead of making you feel behind.',
+  'Miss a run? Jogga keeps the next useful session clear instead of making you feel behind.',
   'Low energy? The plan can shift intensity so momentum stays intact.',
   'Busy week? Keep progressing without overpaying for rigid coaching.',
 ];
 
 const proofStats = [
   { value: '3 days', label: 'Free trial' },
-  { value: 'Cancel', label: 'Anytime' },
-  { value: '50%', label: 'Founder offer' },
+  { value: '$49', label: 'Annual plan' },
+  { value: '67%', label: 'Less than Strava+Runna' },
 ];
 
 const trustPoints = [
-  'Adaptive AI Training',
-  'Built For Real People',
-  'Google Fit Integration',
-  'Beginner To Advanced',
+  'Private By Default',
+  'Strava Free Import',
+  'Read-Only Sync',
+  'Niche-Aware Plans',
   '3-Day Free Trial',
-  'Cancel Anytime',
+  'No Social Feed',
 ];
 
 const solutionFeatures = [
-  'Miss a run? Jogga recalculates.',
+  'Miss a run? Jogga makes the next useful action obvious.',
   'Feeling fatigued? Jogga adapts intensity.',
   'Unexpected busy week? Jogga keeps you progressing without burning out.',
 ];
 
 const comparisonRows = [
   { feature: 'Adaptive AI Plans', jogga: 'Yes', otherApps: 'Yes' },
-  { feature: 'Beginner Friendly', jogga: 'Yes', otherApps: 'Sometimes' },
-  { feature: 'Adjusts Missed Runs', jogga: 'Yes', otherApps: 'Limited' },
-  { feature: 'Affordable Pricing', jogga: 'Yes', otherApps: 'No' },
-  { feature: 'Real-Life Flexibility', jogga: 'Yes', otherApps: 'No' },
-  { feature: 'Founder Pricing', jogga: 'Yes', otherApps: 'No' },
+  { feature: 'Strava Free Import', jogga: 'Yes', otherApps: 'Premium bundle' },
+  { feature: 'Private By Default', jogga: 'Yes', otherApps: 'No' },
+  { feature: 'Niche-Aware Coaching', jogga: 'Yes', otherApps: 'Limited' },
+  { feature: 'No Social Feed', jogga: 'Yes', otherApps: 'No' },
+  { feature: '$49 Annual Price', jogga: 'Yes', otherApps: '$149.99' },
 ];
 
 const landingPlanFeatures = {
   monthly: [
+    'Strava Free run import',
+    'Private readiness and training load',
     'Adaptive AI coaching',
-    'Dynamic training adjustments',
-    'Run tracking',
-    'Goal progression',
-    'Beginner-friendly guidance',
-    'Google Fit integration',
+    'Niche-aware plan adjustments',
+    'No social feed or leaderboard pressure',
   ],
   yearly: [
     'Everything in Monthly',
-    'Lowest long-term price',
-    'Locked-in early pricing',
-    'Best value for committed runners',
+    '67% cheaper than Strava+Runna',
+    'Read-only Strava sync',
+    'Private-by-default coaching',
+    'Best value for consistent runners',
   ],
 } as const;
 
@@ -126,6 +126,158 @@ const trainingGuides = [
   { title: 'Beginner Running Plan', href: '/beginner-running-plan', label: 'Start running safely' },
   { title: 'Half Marathon Plan', href: '/half-marathon-plan', label: 'Personalized half marathon prep' },
 ];
+
+function getFriendlyAuthError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || '');
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes('network-request-failed') || normalized.includes('network')) {
+    return 'Google sign-in could not connect. Check your connection, then try again.';
+  }
+
+  if (normalized.includes('unauthorized-domain')) {
+    return 'Google sign-in is not enabled for this domain yet.';
+  }
+
+  if (normalized.includes('popup') || normalized.includes('blocked')) {
+    return 'Google sign-in was blocked. Allow pop-ups or try again.';
+  }
+
+  if (normalized.includes('did not leave this page') || normalized.includes('did not open')) {
+    return 'Google sign-in did not open. Refresh and try again.';
+  }
+
+  if (message.trim().length > 0 && !message.includes('Firebase')) {
+    return message;
+  }
+
+  return 'Google sign-in could not start. Try again in a moment.';
+}
+
+function ProductPreview() {
+  return (
+    <div className="rounded-[2rem] border border-zinc-800 bg-zinc-900/80 p-4 shadow-2xl shadow-black/40">
+      <div className="overflow-hidden rounded-[1.5rem] border border-zinc-800 bg-zinc-950">
+        <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Today</div>
+              <div className="text-sm font-semibold text-zinc-100">Strava-powered coaching</div>
+          </div>
+          <div className="rounded-full bg-green-400/10 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-green-300">
+            Private
+          </div>
+        </div>
+
+        <div className="space-y-4 p-5">
+          <div className="rounded-2xl border border-yellow-400/20 bg-yellow-400/10 p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-yellow-100">
+                <Zap size={14} />
+                Strava Readiness
+              </div>
+              <span className="text-xs text-yellow-100">Updated today</span>
+            </div>
+            <div className="mt-3 flex items-end gap-3">
+              <div className="text-5xl font-light tracking-tight text-zinc-50">82</div>
+              <div className="pb-2 text-xs leading-5 text-zinc-300">
+                Keep it controlled. Jogga adjusted after your latest Strava run.
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl bg-zinc-100 p-4 text-zinc-950">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="rounded-full bg-zinc-950/10 px-3 py-1 text-[10px] font-bold uppercase tracking-widest">
+                Sync after run
+              </span>
+              <span className="text-xs font-semibold">Today</span>
+            </div>
+            <div className="text-2xl font-light tracking-tight">Open Strava to run</div>
+            <p className="mt-2 text-sm leading-6 text-zinc-700">
+              Track in Strava. Come back to Jogga for private AI coaching and the next useful workout.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3 text-center">
+            {[
+              ['48.6 km', '28-day volume'],
+              ['612 m', 'Elevation'],
+              ['71', 'Load'],
+            ].map(([value, label]) => (
+              <div key={label} className="rounded-2xl border border-zinc-800 bg-zinc-900 p-3">
+                <div className="text-sm font-semibold text-zinc-50">{value}</div>
+                <div className="mt-1 text-[9px] font-bold uppercase tracking-widest text-zinc-500">{label}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-950">
+              <Target size={18} />
+            </div>
+            <p className="text-sm leading-6 text-zinc-300">
+              No feed, no segments, no kudos pressure. Jogga coaches for you, not your followers.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LazyProofVideo({ video, onPlay }: { video: typeof proofVideos[number]; onPlay: (videoId: string) => void }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+
+    if (!('IntersectionObserver' in window)) {
+      setIsVisible(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setIsVisible(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: '300px' });
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div ref={ref} className="overflow-hidden rounded-[2rem] border border-zinc-800 bg-zinc-900 shadow-2xl shadow-black/30">
+      <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+        <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-500">
+          <Activity size={14} className="text-yellow-400" />
+          {video.title}
+        </div>
+        <div className="rounded-full bg-green-400/10 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-green-300">
+          Runner proof
+        </div>
+      </div>
+      {isVisible ? (
+        <video
+          className="aspect-[9/16] w-full bg-black object-cover"
+          src={video.src}
+          poster={video.poster}
+          controls
+          playsInline
+          preload="none"
+          onPlay={() => onPlay(video.id)}
+        />
+      ) : (
+        <div className="aspect-[9/16] w-full bg-zinc-950">
+          <img src={video.poster} alt={`${video.title} Jogga runner proof`} className="h-full w-full object-cover" loading="lazy" />
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function LandingPage({ onStart, authError }: LandingPageProps) {
   const [loadingSource, setLoadingSource] = useState<string | null>(null);
@@ -200,7 +352,7 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
       console.error('Redirect login failed', error);
       setLoadingSource(null);
       setLoadingPhase(null);
-      setLocalAuthError(error instanceof Error ? error.message : 'Google sign-in could not start. Try again.');
+      setLocalAuthError(getFriendlyAuthError(error));
     }
   };
 
@@ -215,6 +367,8 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
   const handleVideoPlay = (videoId: string) => {
     trackEvent('landing_social_proof_played', { video_id: videoId });
   };
+
+  const visibleAuthError = localAuthError || authError;
 
   return (
     <div className="min-h-[100dvh] bg-zinc-950 text-zinc-100">
@@ -245,18 +399,18 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
           >
             <div className="inline-flex items-center gap-2 rounded-full border border-yellow-400/30 bg-yellow-400/10 px-3 py-2 text-xs font-bold uppercase tracking-widest text-yellow-100">
               <Sparkles size={14} />
-              Premium AI running guidance for a fraction of the cost
+              Private Strava-powered AI coaching
             </div>
 
             <div className="space-y-5">
               <h1 className="max-w-3xl text-5xl font-light leading-[1.02] tracking-tight text-zinc-50 md:text-7xl">
-                A Running Coach That Actually Adapts To Your Life
+                Private AI Coaching For Runners Strava Ignores
               </h1>
               <p className="max-w-2xl text-xl leading-8 text-zinc-300 md:text-2xl">
-                Missed a run? Busy week? Low energy? Jogga adjusts instantly so you keep moving forward without guilt, pressure, or expensive coaching fees.
+                Track your run in Strava Free. Come back to Jogga for private readiness, AI coaching, and a next workout that fits your actual life.
               </p>
               <p className="max-w-xl text-sm font-semibold uppercase tracking-widest text-yellow-100">
-                Premium AI running guidance for a fraction of the cost.
+                $6/mo or $49/yr. 67% cheaper than Strava+Runna.
               </p>
             </div>
 
@@ -266,7 +420,7 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
                 disabled={Boolean(loadingSource)}
                 className="flex items-center justify-center gap-2 rounded-full bg-zinc-100 px-6 py-4 text-sm font-bold text-zinc-950 shadow-xl shadow-black/30 transition hover:bg-white active:scale-95 disabled:cursor-wait disabled:opacity-70 sm:whitespace-nowrap"
               >
-                {getButtonText('hero_primary', 'Start Free Trial')}
+                {getButtonText('hero_primary', 'Start 3-Day Trial')}
                 <ChevronRight size={18} />
               </button>
               <a
@@ -277,6 +431,16 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
                 <PlayCircle size={18} />
                 See How It Works
               </a>
+            </div>
+
+            {visibleAuthError && (
+              <p role="alert" className="max-w-lg rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm leading-6 text-red-100">
+                {getFriendlyAuthError(visibleAuthError)}
+              </p>
+            )}
+
+            <div className="lg:hidden">
+              <ProductPreview />
             </div>
 
             <div className="flex max-w-2xl flex-wrap gap-2">
@@ -307,20 +471,20 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
                           Best
                         </span>
                         <span className="rounded-full bg-zinc-100 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-zinc-950">
-                          50% Off
+                          67% Less
                         </span>
                       </div>
                     )}
                     {!option.popular && option.plan && (
                       <span className="rounded-full bg-zinc-100 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-zinc-950">
-                        50% Off
+                        Strava Free
                       </span>
                     )}
                   </div>
                   {option.plan ? (
                     <div className="space-y-1">
                       <div className="text-xs text-zinc-500 line-through">
-                        Normally {option.plan.compareAtPrice}
+                        Strava+Runna {option.plan.compareAtPrice}
                       </div>
                       <div className="text-xl font-bold text-zinc-50">
                         Now {option.plan.price}
@@ -344,11 +508,9 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
               ))}
             </div>
 
-            {(localAuthError || authError) && (
-              <p role="alert" className="max-w-lg rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-                {localAuthError || authError}
-              </p>
-            )}
+            <p className="max-w-lg text-xs leading-5 text-zinc-500">
+              Strava connection is read-only. We import runs for coaching and never post to your feed.
+            </p>
 
             {isBotProtectionConfigured() && (
               <p className="max-w-lg text-xs leading-5 text-zinc-600">
@@ -371,31 +533,29 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.1 }}
             id="proof"
-            className="mx-auto grid w-full max-w-[640px] grid-cols-1 gap-4 sm:grid-cols-2 lg:max-w-[520px]"
+            className="mx-auto hidden w-full max-w-[560px] lg:block"
           >
-            {proofVideos.map((video) => (
-              <div key={video.id} className="overflow-hidden rounded-[2rem] border border-zinc-800 bg-zinc-900 shadow-2xl shadow-black/40">
-                <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
-                  <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-500">
-                    <Activity size={14} className="text-yellow-400" />
-                    {video.title}
-                  </div>
-                  <div className="rounded-full bg-green-400/10 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-green-300">
-                    Live
-                  </div>
-                </div>
-                <video
-                  className="aspect-[9/16] w-full bg-black object-cover"
-                  src={video.src}
-                  poster={video.poster}
-                  controls
-                  playsInline
-                  preload="metadata"
-                  onPlay={() => handleVideoPlay(video.id)}
-                />
-              </div>
-            ))}
+            <ProductPreview />
           </motion.div>
+        </section>
+
+        <section className="border-y border-zinc-800 bg-zinc-900/35">
+          <div className="mx-auto grid max-w-6xl gap-8 px-5 py-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+            <div className="space-y-4">
+              <div className="text-xs font-bold uppercase tracking-widest text-yellow-100">Real runner proof</div>
+              <h2 className="text-3xl font-light leading-tight text-zinc-50 md:text-5xl">
+                See the coaching experience before you commit.
+              </h2>
+              <p className="text-sm leading-7 text-zinc-300 md:text-base">
+                Short testimonials load only when you reach them, keeping the first screen fast while still showing the product in real use.
+              </p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {proofVideos.map((video) => (
+                <LazyProofVideo key={video.id} video={video} onPlay={handleVideoPlay} />
+              ))}
+            </div>
+          </div>
         </section>
 
         <section id="how-it-works" className="border-y border-zinc-800 bg-zinc-900/35">
@@ -438,7 +598,7 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
               Jogga Adjusts When Life Happens
             </h2>
             <p className="mt-5 text-sm leading-7 text-zinc-300">
-              Instead of rigid training plans, Jogga uses adaptive AI coaching that responds to your real-world schedule and performance.
+              Instead of rigid training plans, Jogga uses adaptive AI coaching cues and recovery guidance that respond to your real-world schedule and performance.
             </p>
             <div className="mt-6 space-y-3">
               {solutionFeatures.map((feature) => (
@@ -457,12 +617,12 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
         <section id="pricing" className="border-y border-zinc-800 bg-zinc-900/35">
           <div className="mx-auto max-w-6xl px-5 py-12 md:py-16">
             <div className="mb-8 max-w-3xl space-y-3">
-              <div className="text-xs font-bold uppercase tracking-widest text-yellow-100">Founder pricing available now</div>
+              <div className="text-xs font-bold uppercase tracking-widest text-yellow-100">Strava Free users welcome</div>
               <h2 className="text-3xl font-light leading-tight text-zinc-50 md:text-5xl">
-                Why Pay Premium Prices For Running Plans?
+                Why Pay $149.99 For Generic Running Plans?
               </h2>
               <p className="text-sm leading-7 text-zinc-300 md:text-base">
-                Jogga gives you adaptive AI coaching at a price that makes starting easy.
+                Jogga undercuts the Strava+Runna bundle with private coaching for runners who do not want a public performance feed.
               </p>
             </div>
 
@@ -480,12 +640,12 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
                   <div className="mb-5 flex items-start justify-between gap-4">
                     <div>
                       <div className="mb-2 inline-flex rounded-full bg-zinc-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-zinc-950">
-                        {plan.popular ? 'Best Value' : '50% Off'}
+                        {plan.popular ? '67% Less' : 'Strava Free'}
                       </div>
                       <h3 className="text-2xl font-semibold text-zinc-50">{plan.shortPeriod}</h3>
                     </div>
                     <div className="text-right">
-                      <div className="text-xs text-zinc-500 line-through">Normally {plan.compareAtPrice}</div>
+                      <div className="text-xs text-zinc-500">Strava+Runna {plan.compareAtPrice}</div>
                       <div className="mt-1 text-3xl font-bold text-zinc-50">
                         Now {plan.price}
                         <span className="text-sm font-semibold text-zinc-400">
@@ -521,7 +681,7 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
                   </button>
 
                   <p className="mt-3 text-center text-[10px] font-bold uppercase tracking-widest text-zinc-500">
-                    {plan.id === 'monthly' ? 'Cancel anytime.' : 'Founder pricing available now.'}
+                    {plan.id === 'monthly' ? 'Cancel anytime.' : '67% cheaper than Strava+Runna.'}
                   </p>
                 </motion.div>
               ))}
@@ -531,12 +691,12 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
 
         <section className="mx-auto max-w-6xl px-5 py-12 md:py-16">
           <div className="mb-8 max-w-3xl space-y-3">
-            <div className="text-xs font-bold uppercase tracking-widest text-yellow-100">Simple, flexible, affordable</div>
+            <div className="text-xs font-bold uppercase tracking-widest text-yellow-100">Anti-Strava by design</div>
             <h2 className="text-3xl font-light leading-tight text-zinc-50 md:text-5xl">
-              Jogga vs Expensive Running Apps
+              Jogga vs Strava+Runna
             </h2>
             <p className="text-sm leading-7 text-zinc-300 md:text-base">
-              Stop overpaying for rigid coaching apps. Jogga gives you the motivation, structure, and adaptability you actually need at a price that makes starting easy.
+              Use Strava as the dashboard. Use Jogga as the private coaching layer that turns your recent runs into readiness, consistency, and next-workout guidance.
             </p>
           </div>
 
@@ -611,7 +771,7 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
           <div className="grid gap-3">
             {[
               'Start with your goal, schedule, experience, and weekly mileage.',
-              'Use GPS runs and feedback to keep the plan grounded in real performance.',
+              'Connect Strava Free so Jogga can read your run history without posting anything.',
               'Let the dashboard keep today clear and the next step obvious.',
               'Keep moving forward without trying to make one missed run define the week.',
             ].map((item) => (
@@ -626,9 +786,9 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
         <section className="px-5 pb-12">
           <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-5 rounded-[2rem] border border-yellow-400/25 bg-yellow-400/10 p-6 md:flex-row md:items-center md:p-8">
             <div>
-              <h2 className="text-2xl font-light text-zinc-50">Start your first run.</h2>
+              <h2 className="text-2xl font-light text-zinc-50">Start private coaching.</h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-300">
-                3-Day Free Trial • Cancel Anytime
+                3-Day Free Trial • Strava read-only • Cancel Anytime
               </p>
             </div>
             <button
@@ -636,7 +796,7 @@ export default function LandingPage({ onStart, authError }: LandingPageProps) {
               disabled={Boolean(loadingSource)}
               className="flex w-full items-center justify-center gap-2 rounded-full bg-zinc-100 px-6 py-4 text-sm font-bold text-zinc-950 transition hover:bg-white active:scale-95 disabled:cursor-wait disabled:opacity-70 md:w-auto"
             >
-              {getButtonText('bottom_cta', 'Start Your First Run')}
+              {getButtonText('bottom_cta', 'Start Private Coaching')}
               <ChevronRight size={18} />
             </button>
           </div>

@@ -7,30 +7,14 @@ import { LegalPage } from './components/legal/LegalPage';
 import { SEO_PAGE_BY_PATH } from './components/seo/seoPages';
 import { SeoTrainingPage } from './components/seo/SeoTrainingPage';
 import './index.css';
-import { registerSW } from 'virtual:pwa-register';
 import { initAnalytics } from './services/analyticsService';
 
-let updateServiceWorker: ((reloadPage?: boolean) => Promise<void>) | undefined;
 let hasReloadedForUpdate = false;
 
 function reloadForAppUpdate() {
   if (hasReloadedForUpdate) return;
   hasReloadedForUpdate = true;
   window.location.reload();
-}
-
-function applyAppUpdate() {
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.addEventListener('controllerchange', reloadForAppUpdate, { once: true });
-  }
-
-  try {
-    void updateServiceWorker?.(true);
-  } catch (error) {
-    console.error('Failed to apply app update:', error);
-  }
-
-  window.setTimeout(reloadForAppUpdate, 1500);
 }
 
 function checkForAppUpdate() {
@@ -43,14 +27,27 @@ function checkForAppUpdate() {
   });
 }
 
-updateServiceWorker = registerSW({
-  onNeedRefresh() {
-    applyAppUpdate();
-  },
-  onOfflineReady() {
-    console.log('App ready to work offline');
-  },
-});
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').then((registration) => {
+      console.log('Jogga service worker registered');
+      registration.addEventListener('updatefound', () => {
+        const installingWorker = registration.installing;
+        if (!installingWorker) return;
+
+        installingWorker.addEventListener('statechange', () => {
+          if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.addEventListener('controllerchange', reloadForAppUpdate, { once: true });
+            installingWorker.postMessage({ type: 'SKIP_WAITING' });
+            window.setTimeout(reloadForAppUpdate, 1500);
+          }
+        });
+      });
+    }).catch((error) => {
+      console.error('Service worker registration failed:', error);
+    });
+  });
+}
 
 window.addEventListener('focus', checkForAppUpdate);
 document.addEventListener('visibilitychange', () => {

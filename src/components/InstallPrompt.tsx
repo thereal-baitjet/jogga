@@ -14,7 +14,7 @@ export default function InstallPrompt({ onInstall, onDismiss }: InstallPromptPro
           <div className="w-12 h-12 rounded-2xl bg-zinc-800 flex items-center justify-center text-zinc-100">
             <Zap size={24} fill="currentColor" />
           </div>
-          <button onClick={onDismiss} className="text-zinc-500 hover:text-zinc-300">
+          <button onClick={onDismiss} aria-label="Dismiss install prompt" className="text-zinc-500 hover:text-zinc-300">
             <X size={20} />
           </button>
         </div>

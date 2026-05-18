@@ -182,6 +182,12 @@ export interface Achievement {
 export type HealthMetricType =
   | 'steps'
   | 'distance'
+  | 'run_count'
+  | 'duration'
+  | 'elevation_gain'
+  | 'training_load'
+  | 'last_sync'
+  | 'data_source'
   | 'active_calories'
   | 'hr'
   | 'resting_hr'
@@ -200,5 +206,28 @@ export interface HealthMetric {
   trend: 'up' | 'down' | 'stable';
   updatedAt: string;
   history: { date: string; value: number }[];
-  source?: 'google_fit' | 'manual' | 'computed';
+  source?: 'strava' | 'google_fit' | 'manual' | 'computed';
+}
+
+export interface StravaHealthSummary {
+  isConnected: boolean;
+  athleteName: string | null;
+  recentRunCount: number;
+  recentDistanceKm: number;
+  recentDurationHours: number;
+  recentElevationMeters: number;
+  recentLoad: number;
+  lastSyncAt: string | null;
+  lastSyncLabel: string;
+  hasRecentRuns: boolean;
+}
+
+export interface StravaHealthMetricCard {
+  id: string;
+  title: string;
+  value: string;
+  unit?: string;
+  detail: string;
+  updatedAt: string;
+  source: 'strava';
 }

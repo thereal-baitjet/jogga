@@ -1,4 +1,12 @@
-import { enforceIpRateLimit, getPriceId, getRequestOrigin, getStripe } from "./_utils.js";
+import {
+  enforceIpRateLimit,
+  enforceSameOrigin,
+  getPriceId,
+  getRequestOrigin,
+  getStripe,
+  normalizeEmail,
+  verifyFirebaseUserMatches,
+} from "./_utils.js";
 import { FREE_TRIAL_DAYS, isTrialCheckout, normalizeBillingPlanId } from "../src/config/billing.js";
 
 function redirect(res: any, statusCode: number, location: string) {
@@ -10,7 +18,14 @@ function redirect(res: any, statusCode: number, location: string) {
 function sendHtmlError(res: any, message: string, statusCode = 400) {
   res.statusCode = statusCode;
   res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.end(`<!doctype html><html><head><title>Jogga Checkout Error</title></head><body style="font-family: system-ui; background: #09090b; color: #fafafa; padding: 32px;"><h1>Checkout could not start</h1><p>${message}</p><p><a style="color:#fafafa" href="/subscription">Return to Jogga</a></p></body></html>`);
+  const safeMessage = message.replace(/[&<>"']/g, character => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[character] || character));
+  res.end(`<!doctype html><html><head><title>Jogga Checkout Error</title></head><body style="font-family: system-ui; background: #09090b; color: #fafafa; padding: 32px;"><h1>Checkout could not start</h1><p>${safeMessage}</p><p><a style="color:#fafafa" href="/subscription">Return to Jogga</a></p></body></html>`);
 }
 
 export default async function handler(req: any, res: any) {
@@ -25,8 +40,10 @@ export default async function handler(req: any, res: any) {
       windowMs: 60 * 1000,
       message: "Too many checkout attempts. Try again in a minute.",
     });
+    enforceSameOrigin(req);
 
     const { planId, userId, email, trial } = req.query;
+    const user = await verifyFirebaseUserMatches(req, userId);
     const billingPlanId = normalizeBillingPlanId(planId);
     const useTrial = isTrialCheckout(planId, trial);
     const priceId = getPriceId(planId);
@@ -35,15 +52,12 @@ export default async function handler(req: any, res: any) {
       return sendHtmlError(res, "Unknown or unconfigured plan. Check STRIPE_MONTHLY_PRICE_ID and STRIPE_YEARLY_PRICE_ID in Vercel.", 400);
     }
 
-    if (typeof userId !== "string" || userId.trim().length === 0) {
-      return sendHtmlError(res, "Missing user ID. Please sign in again.", 400);
-    }
-
     const stripe = getStripe();
     const origin = getRequestOrigin(req);
+    const customerEmail = user.email || normalizeEmail(email) || undefined;
     const subscriptionData: Record<string, any> = {
       metadata: {
-        userId,
+        userId: user.uid,
         planId: billingPlanId,
         checkoutPlanId: useTrial ? "trial" : billingPlanId,
       },
@@ -68,12 +82,12 @@ export default async function handler(req: any, res: any) {
       mode: "subscription",
       success_url: `${origin}/dashboard?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/subscription?checkout=cancelled`,
-      client_reference_id: userId,
-      customer_email: typeof email === "string" && email.includes("@") ? email : undefined,
+      client_reference_id: user.uid,
+      customer_email: customerEmail,
       allow_promotion_codes: true,
       payment_method_collection: "always",
       metadata: {
-        userId,
+        userId: user.uid,
         planId: billingPlanId,
         checkoutPlanId: useTrial ? "trial" : billingPlanId,
         trial: useTrial ? "true" : "false",

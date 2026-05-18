@@ -4,7 +4,13 @@ import Stripe from "stripe";
 import dotenv from "dotenv";
 import axios from "axios";
 import { GoogleGenAI, Modality } from "@google/genai";
-import { createCoachOpinionResponse, enforceIpRateLimit } from "./api/_utils.js";
+import {
+  createCoachOpinionResponse,
+  enforceIpRateLimit,
+  findUserSubscriptionForAccess,
+  getAccessSourceForSubscriptionStatus,
+  isAccessSubscriptionStatus as isApiAccessSubscriptionStatus,
+} from "./api/_utils.js";
 import botVerifyHandler from "./api/bot/verify.js";
 import stravaAuthCallbackHandler from "./api/auth/strava/callback.js";
 import stravaAuthUrlHandler from "./api/auth/strava/url.js";
@@ -311,9 +317,10 @@ async function findActiveUserSubscription(stripe: Stripe, userId: string) {
   return null;
 }
 
-function createHttpError(status: number, message: string) {
-  const error = new Error(message) as Error & { status: number };
+function createHttpError(status: number, message: string, options: { code?: string } = {}) {
+  const error = new Error(message) as Error & { status: number; code?: string };
   error.status = status;
+  error.code = options.code;
   return error;
 }
 
@@ -321,36 +328,47 @@ function getAuthorizationToken(req: express.Request) {
   const authorization = req.headers.authorization;
   if (typeof authorization !== "string") return null;
 
-  const [scheme, token] = authorization.split(" ");
-  if (scheme !== "Bearer" || !token) return null;
-  return token;
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  const token = match?.[1]?.trim();
+  return token || null;
 }
 
 async function verifyFirebaseUser(req: express.Request) {
   const idToken = getAuthorizationToken(req);
   if (!idToken) {
-    throw createHttpError(401, "Sign in before using AI features.");
+    throw createHttpError(401, "Authentication required.", { code: "AUTH_REQUIRED" });
   }
 
-  const response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_WEB_API_KEY}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ idToken }),
-  });
-  const data = await response.json();
+  let response: Response;
+  let data: any;
+
+  try {
+    response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_WEB_API_KEY}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken }),
+    });
+    data = await response.json();
+  } catch (error) {
+    console.error("Firebase auth token lookup failed:", error instanceof Error ? error.message : String(error));
+    throw createHttpError(502, "Firebase authentication lookup failed.", {
+      code: "FIREBASE_AUTH_LOOKUP_FAILED",
+    });
+  }
 
   if (!response.ok || !Array.isArray(data.users) || data.users.length === 0) {
-    throw createHttpError(401, "Invalid or expired sign-in session.");
+    throw createHttpError(401, "Invalid or expired sign-in session.", { code: "AUTH_INVALID" });
   }
 
   const user = data.users[0];
   if (typeof user.localId !== "string" || user.localId.length === 0) {
-    throw createHttpError(401, "Invalid sign-in session.");
+    throw createHttpError(401, "Invalid sign-in session.", { code: "AUTH_INVALID" });
   }
 
   return {
     uid: user.localId as string,
     email: typeof user.email === "string" ? user.email as string : null,
+    emailVerified: user.emailVerified === true,
   };
 }
 
@@ -375,17 +393,20 @@ async function requireAiAccess(req: express.Request, options: { feature: string;
   const user = await verifyFirebaseUser(req);
   if (isFreeAccessUser(user)) {
     enforceRateLimit(user.uid, options.feature, options.maxRequests, options.windowMs);
-    return { user, subscription: null };
+    return { user, subscription: null, accessSource: "free_access" as const };
   }
 
-  const subscription = await findActiveUserSubscription(getStripe(), user.uid);
+  const { subscription } = await findUserSubscriptionForAccess(getStripe(), user);
+  const subscriptionStatus = subscription?.cancel_at_period_end
+    ? "canceling"
+    : subscription?.status || null;
 
-  if (!subscription) {
+  if (!subscription || !isApiAccessSubscriptionStatus(subscriptionStatus)) {
     throw createHttpError(403, "An active subscription is required for AI features.");
   }
 
   enforceRateLimit(user.uid, options.feature, options.maxRequests, options.windowMs);
-  return { user, subscription };
+  return { user, subscription, accessSource: getAccessSourceForSubscriptionStatus(subscriptionStatus) };
 }
 
 function sendApiError(res: express.Response, error: any) {

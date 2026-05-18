@@ -39,6 +39,11 @@ export default function Dashboard({
   const nextWorkouts = futureWorkouts.filter(w => w.id !== featuredWorkout?.id).slice(0, 3);
   const completedWorkouts = plan.filter(w => w.status === 'completed').length;
   const hasEnoughData = completedWorkouts > 0;
+  const readinessTrendLabel = readiness.trend > 0
+    ? `+${readiness.trend}% from recent load`
+    : readiness.trend < 0
+      ? `${readiness.trend}% from recent load`
+      : 'Stable after your last run';
   const greeting = getTimeOfDayGreeting();
   const workoutLabel = featuredWorkout?.date === today ? 'Today' : featuredWorkout ? formatDateLabel(featuredWorkout.date, 'EEE, MMM d') : null;
   const marathonReadying = buildMarathonReadyingProfile(plan, achievements);
@@ -76,6 +81,7 @@ export default function Dashboard({
           )}
           <button 
             onClick={onViewProfile}
+            aria-label="Open profile"
             className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700 hover:bg-zinc-700 transition-colors"
           >
             <User size={20} className="text-zinc-400" />
@@ -94,19 +100,31 @@ export default function Dashboard({
             <div className="flex items-center gap-2 text-zinc-400">
               <Zap size={16} className="text-yellow-500" />
               <span className="text-xs font-semibold uppercase tracking-widest">
-                {!hasEnoughData ? "NOT ENOUGH DATA" : "Readiness Score"}
+                {!hasEnoughData ? "Baseline Pending" : "Readiness Score"}
               </span>
             </div>
-            <div className="text-xs text-zinc-500">Updated today</div>
+            <div className="text-xs text-zinc-500">{hasEnoughData ? 'Updated today' : 'After first run'}</div>
           </div>
           
           <div className="flex items-end gap-4">
-            <div className="text-7xl font-light tracking-tighter">{readiness.score}%</div>
+            <div className="text-7xl font-light tracking-tighter">{hasEnoughData ? `${readiness.score}%` : '--'}</div>
             <div className="mb-2 text-sm text-zinc-400 flex items-center gap-1">
-              <TrendingUp size={14} className="text-green-500" />
-              <span>+4% from yesterday</span>
+              {hasEnoughData ? (
+                <>
+                  <TrendingUp size={14} className={readiness.trend >= 0 ? 'text-green-500' : 'text-yellow-400'} />
+                  <span>{readinessTrendLabel}</span>
+                </>
+              ) : (
+                <span>Complete a run to unlock your first score.</span>
+              )}
             </div>
           </div>
+
+          {!hasEnoughData && (
+            <p className="rounded-2xl border border-zinc-800 bg-zinc-950/50 p-4 text-sm leading-6 text-zinc-400">
+              Jogga waits for real run data before scoring readiness, fatigue, and trend. No fake confidence before your baseline.
+            </p>
+          )}
 
           <div className="grid grid-cols-3 gap-4 pt-4 border-t border-zinc-800/50">
             <div className="space-y-1">
@@ -139,7 +157,7 @@ export default function Dashboard({
         <div className="relative flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-zinc-400">
             <Sparkles size={16} className="text-yellow-400" />
-            <span className="text-xs font-semibold uppercase tracking-normal">Marathon Readying</span>
+            <span className="text-xs font-semibold uppercase tracking-normal">Training Momentum</span>
           </div>
           <span className="rounded-full bg-yellow-400/10 px-3 py-1 text-xs font-bold text-yellow-200">
             Level {marathonReadying.level}
@@ -180,7 +198,7 @@ export default function Dashboard({
           </div>
           <div>
             <div className="text-sm font-medium">{marathonReadying.readinessPoints}</div>
-            <div className="text-[9px] font-bold uppercase tracking-widest text-zinc-600">Readying</div>
+            <div className="text-[9px] font-bold uppercase tracking-widest text-zinc-600">Momentum</div>
           </div>
         </div>
 
@@ -306,13 +324,27 @@ export default function Dashboard({
         </div>
       </section>
 
-      {/* Navigation Bar (Mock) */}
-      <div className="fixed bottom-0 left-0 right-0 bg-zinc-950/80 backdrop-blur-xl border-t border-zinc-800 p-4 flex justify-around items-center z-50">
-        <button className="p-2 text-zinc-100"><Zap size={24} /></button>
-        <button onClick={onViewPlan} className="p-2 text-zinc-500 hover:text-zinc-300 transition-colors"><Calendar size={24} /></button>
-        <button onClick={onViewAchievements} className="p-2 text-zinc-500 hover:text-zinc-300 transition-colors"><Trophy size={24} /></button>
-        <button onClick={onViewHealth} className="p-2 text-zinc-500 hover:text-zinc-300 transition-colors"><Activity size={24} /></button>
-      </div>
+      <nav
+        aria-label="Primary"
+        className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-w-md items-center justify-around border-t border-zinc-800 bg-zinc-950/90 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 backdrop-blur-xl"
+      >
+        <button aria-current="page" className="flex min-w-14 flex-col items-center gap-1 p-2 text-zinc-100">
+          <Zap size={22} />
+          <span className="text-[9px] font-bold uppercase tracking-widest">Today</span>
+        </button>
+        <button onClick={onViewPlan} className="flex min-w-14 flex-col items-center gap-1 p-2 text-zinc-500 transition-colors hover:text-zinc-300">
+          <Calendar size={22} />
+          <span className="text-[9px] font-bold uppercase tracking-widest">Plan</span>
+        </button>
+        <button onClick={onViewAchievements} className="flex min-w-14 flex-col items-center gap-1 p-2 text-zinc-500 transition-colors hover:text-zinc-300">
+          <Trophy size={22} />
+          <span className="text-[9px] font-bold uppercase tracking-widest">Wins</span>
+        </button>
+        <button onClick={onViewHealth} className="flex min-w-14 flex-col items-center gap-1 p-2 text-zinc-500 transition-colors hover:text-zinc-300">
+          <Activity size={22} />
+          <span className="text-[9px] font-bold uppercase tracking-widest">Health</span>
+        </button>
+      </nav>
     </div>
   );
 }

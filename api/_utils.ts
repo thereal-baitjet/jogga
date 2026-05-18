@@ -35,7 +35,11 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_TEXT_MODEL = process.env.OPENAI_TEXT_MODEL || "gpt-4o-mini";
 const OPENAI_TTS_MODEL = process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts";
-const FIREBASE_WEB_API_KEY = process.env.FIREBASE_WEB_API_KEY || "AIzaSyBMLzrUGmsUrXAzoh-VkdpYJNCwXj6FJHQ";
+const FIREBASE_FRONTEND_API_KEY = "AIzaSyBMLzrUGmsUrXAzoh-VkdpYJNCwXj6FJHQ";
+const FIREBASE_WEB_API_KEYS = Array.from(new Set([
+  process.env.FIREBASE_WEB_API_KEY?.trim(),
+  FIREBASE_FRONTEND_API_KEY,
+].filter((value): value is string => Boolean(value))));
 const STRIPE_PRICE_IDS = {
   monthly: process.env.STRIPE_MONTHLY_PRICE_ID,
   yearly: process.env.STRIPE_YEARLY_PRICE_ID,
@@ -309,14 +313,16 @@ export async function generateCoachAudio(text: string, voice: unknown) {
 }
 
 export function getRequestOrigin(req: any) {
-  const origin = req.headers?.origin;
+  const origin = normalizeOrigin(getRequestHeader(req, "origin"));
   const configuredOrigin = APP_URL.replace(/\/$/, "");
+  const requestHostOrigin = getRequestHostOrigin(req);
 
-  if (typeof origin === "string" && /^https?:\/\//.test(origin)) {
-    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
-      return origin;
-    }
-    return configuredOrigin;
+  if (origin && isAllowedOrigin(origin, req)) {
+    return origin;
+  }
+
+  if (requestHostOrigin && isAllowedOrigin(requestHostOrigin, req)) {
+    return requestHostOrigin;
   }
 
   return configuredOrigin;
@@ -326,6 +332,23 @@ function getRequestHeader(req: any, name: string) {
   const value = req.headers?.[name.toLowerCase()] || req.headers?.[name];
   if (Array.isArray(value)) return value[0];
   return typeof value === "string" ? value : null;
+}
+
+function getRequestHostOrigin(req: any) {
+  const rawHost = getRequestHeader(req, "x-forwarded-host") || getRequestHeader(req, "host");
+  if (!rawHost) return null;
+
+  const host = rawHost.split(",")[0]?.trim();
+  if (!host || !/^[a-z0-9.-]+(?::\d+)?$/i.test(host)) return null;
+
+  const rawProto = (getRequestHeader(req, "x-forwarded-proto") || "").split(",")[0]?.trim().toLowerCase();
+  const proto = rawProto === "http" || rawProto === "https"
+    ? rawProto
+    : /^localhost(?::\d+)?$|^127\.0\.0\.1(?::\d+)?$/.test(host)
+      ? "http"
+      : "https";
+
+  return `${proto}://${host}`;
 }
 
 function normalizeOrigin(value: string | null) {
@@ -338,8 +361,11 @@ function normalizeOrigin(value: string | null) {
   }
 }
 
-function isAllowedOrigin(origin: string) {
+function isAllowedOrigin(origin: string, req?: any) {
+  const requestHostOrigin = req ? getRequestHostOrigin(req) : null;
+
   if (origin === APP_ORIGIN) return true;
+  if (requestHostOrigin && origin === requestHostOrigin) return true;
   if (ADDITIONAL_ALLOWED_ORIGINS.includes(origin)) return true;
   if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
   return false;
@@ -357,7 +383,12 @@ export function enforceSameOrigin(req: any, options: SameOriginOptions = {}) {
     return;
   }
 
-  if (!isAllowedOrigin(candidate)) {
+  if (!isAllowedOrigin(candidate, req)) {
+    console.warn("Same-origin check failed", {
+      candidate,
+      appOrigin: APP_ORIGIN,
+      requestHostOrigin: getRequestHostOrigin(req),
+    });
     throw createHttpError(403, "Request origin is not allowed.", { code: "ORIGIN_NOT_ALLOWED" });
   }
 }
@@ -382,8 +413,37 @@ export function isAccessSubscriptionStatus(status: string | null) {
   return status === "active" || status === "trialing";
 }
 
+export function getAccessSourceForSubscriptionStatus(status: string | null) {
+  if (status === "trialing") return "trial";
+  if (status === "active") return "stripe_subscription";
+  return "none";
+}
+
 function escapeStripeSearchValue(value: string) {
   return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+function getEffectiveSubscriptionStatus(subscription: Stripe.Subscription | null | undefined) {
+  if (!subscription) return null;
+  return subscription.cancel_at_period_end ? "canceling" : subscription.status || null;
+}
+
+function getSubscriptionSortScore(subscription: Stripe.Subscription) {
+  const status = getEffectiveSubscriptionStatus(subscription);
+  if (status === "trialing") return 4;
+  if (status === "active") return 3;
+  if (status === "past_due" || status === "unpaid") return 2;
+  return 1;
+}
+
+function chooseBestSubscription(subscriptions: Stripe.Subscription[]) {
+  if (subscriptions.length === 0) return null;
+
+  return [...subscriptions].sort((a, b) => {
+    const scoreDiff = getSubscriptionSortScore(b) - getSubscriptionSortScore(a);
+    if (scoreDiff !== 0) return scoreDiff;
+    return (b.created || 0) - (a.created || 0);
+  })[0] || null;
 }
 
 async function findActiveUserSubscription(stripe: Stripe, userId: string) {
@@ -400,6 +460,124 @@ async function findActiveUserSubscription(stripe: Stripe, userId: string) {
   }
 
   return null;
+}
+
+async function getUserBillingRecord(userId: string) {
+  try {
+    const { getFirebaseAdminDb } = await import("./firebase-admin.js");
+    const snap = await getFirebaseAdminDb().collection("users").doc(userId).get();
+    return snap.exists ? snap.data() || {} : {};
+  } catch (error) {
+    console.error("Unable to read Firestore billing record for access check:", {
+      userId,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return {};
+  }
+}
+
+function getStringField(record: Record<string, unknown>, field: string) {
+  const value = record[field];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+async function retrieveSubscriptionCandidate(stripe: Stripe, subscriptionId: string | null) {
+  if (!subscriptionId?.startsWith("sub_")) return null;
+
+  try {
+    return await stripe.subscriptions.retrieve(subscriptionId, {
+      expand: ["items.data.price"],
+    });
+  } catch (error) {
+    console.error("Unable to retrieve stored Stripe subscription:", {
+      subscriptionId,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+async function listCustomerSubscriptionCandidates(stripe: Stripe, customerId: string | null) {
+  if (!customerId?.startsWith("cus_")) return [];
+
+  const subscriptions = await stripe.subscriptions.list({
+    customer: customerId,
+    limit: 10,
+    status: "all",
+    expand: ["data.items.data.price"],
+  });
+
+  return subscriptions.data;
+}
+
+async function searchSubscriptionCandidatesByMetadata(stripe: Stripe, userId: string) {
+  const escapedUserId = escapeStripeSearchValue(userId);
+  const candidates: Stripe.Subscription[] = [];
+
+  for (const status of ["trialing", "active", "past_due", "unpaid", "canceled", "incomplete", "incomplete_expired"]) {
+    const subscriptions = await stripe.subscriptions.search({
+      query: `metadata['userId']:'${escapedUserId}' AND status:'${status}'`,
+      limit: 3,
+      expand: ["data.items.data.price"],
+    });
+    candidates.push(...subscriptions.data);
+  }
+
+  return candidates;
+}
+
+async function searchCustomerSubscriptionCandidatesByEmail(stripe: Stripe, email: string | null, emailVerified: boolean) {
+  if (!email || !emailVerified) return [];
+
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail) return [];
+
+  const customers = await stripe.customers.search({
+    query: `email:'${escapeStripeSearchValue(normalizedEmail)}'`,
+    limit: 5,
+  });
+  const subscriptions: Stripe.Subscription[] = [];
+
+  for (const customer of customers.data) {
+    if ((customer as any).deleted === true) continue;
+    if (typeof customer.email !== "string" || customer.email.trim().toLowerCase() !== normalizedEmail) continue;
+    subscriptions.push(...await listCustomerSubscriptionCandidates(stripe, customer.id));
+  }
+
+  return subscriptions;
+}
+
+export async function findUserSubscriptionForAccess(
+  stripe: Stripe,
+  user: { uid: string; email?: string | null; emailVerified?: boolean }
+) {
+  const billingRecord = await getUserBillingRecord(user.uid);
+  const storedSubscription = await retrieveSubscriptionCandidate(
+    stripe,
+    getStringField(billingRecord, "stripeSubscriptionId")
+  );
+  const metadataCandidates = await searchSubscriptionCandidatesByMetadata(stripe, user.uid);
+  const customerCandidates = await listCustomerSubscriptionCandidates(
+    stripe,
+    getStringField(billingRecord, "stripeCustomerId")
+  );
+  const emailCandidates = await searchCustomerSubscriptionCandidatesByEmail(
+    stripe,
+    user.email || null,
+    user.emailVerified !== false
+  );
+  const candidates = [
+    storedSubscription,
+    ...metadataCandidates,
+    ...customerCandidates,
+    ...emailCandidates,
+  ].filter((subscription): subscription is Stripe.Subscription => Boolean(subscription));
+  const uniqueCandidates = Array.from(new Map(candidates.map(subscription => [subscription.id, subscription])).values());
+
+  return {
+    subscription: chooseBestSubscription(uniqueCandidates),
+    matchCount: uniqueCandidates.length,
+  };
 }
 
 export function checkoutSessionAllowsAccess(
@@ -440,9 +618,9 @@ function getAuthorizationToken(req: any) {
   const authorization = req.headers?.authorization || req.headers?.Authorization;
   if (typeof authorization !== "string") return null;
 
-  const [scheme, token] = authorization.split(" ");
-  if (scheme !== "Bearer" || !token) return null;
-  return token;
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  const token = match?.[1]?.trim();
+  return token || null;
 }
 
 function createHttpError(
@@ -520,29 +698,64 @@ export function enforceIpRateLimit(req: any, options: RateLimitOptions) {
 export async function verifyFirebaseUser(req: any) {
   const idToken = getAuthorizationToken(req);
   if (!idToken) {
-    throw createHttpError(401, "Sign in before using AI features.");
+    throw createHttpError(401, "Authentication required.", { code: "AUTH_REQUIRED" });
   }
 
-  const response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_WEB_API_KEY}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ idToken }),
-  });
-  const data = await response.json();
+  const failedLookups: Array<{ status?: number; code?: string }> = [];
+  let networkFailureMessage: string | null = null;
 
-  if (!response.ok || !Array.isArray(data.users) || data.users.length === 0) {
-    throw createHttpError(401, "Invalid or expired sign-in session.");
+  for (const [keyIndex, apiKey] of FIREBASE_WEB_API_KEYS.entries()) {
+    let response: Response;
+    let data: any;
+
+    try {
+      response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken }),
+      });
+      data = await response.json().catch(() => ({}));
+    } catch (error) {
+      networkFailureMessage = error instanceof Error ? error.message : String(error);
+      failedLookups.push({ code: "NETWORK_ERROR" });
+      continue;
+    }
+
+    if (response.ok && Array.isArray(data.users) && data.users.length > 0) {
+      const user = data.users[0];
+      if (typeof user.localId !== "string" || user.localId.length === 0) {
+        throw createHttpError(401, "Invalid sign-in session.", { code: "AUTH_INVALID" });
+      }
+
+      if (failedLookups.length > 0) {
+        console.warn("Firebase auth lookup succeeded after fallback key", {
+          keyIndex,
+          failedLookups,
+        });
+      }
+
+      return {
+        uid: user.localId as string,
+        email: typeof user.email === "string" ? user.email as string : null,
+        emailVerified: user.emailVerified === true,
+      };
+    }
+
+    failedLookups.push({
+      status: response.status,
+      code: typeof data?.error?.message === "string" ? data.error.message : undefined,
+    });
   }
 
-  const user = data.users[0];
-  if (typeof user.localId !== "string" || user.localId.length === 0) {
-    throw createHttpError(401, "Invalid sign-in session.");
+  if (networkFailureMessage && failedLookups.every(lookup => lookup.code === "NETWORK_ERROR")) {
+    console.error("Firebase auth token lookup failed:", networkFailureMessage);
+    throw createHttpError(502, "Firebase authentication lookup failed.", {
+      code: "FIREBASE_AUTH_LOOKUP_FAILED",
+    });
   }
 
-  return {
-    uid: user.localId as string,
-    email: typeof user.email === "string" ? user.email as string : null,
-  };
+  console.warn("Firebase auth token lookup rejected", { failedLookups });
+  throw createHttpError(401, "Invalid or expired sign-in session.", { code: "AUTH_INVALID" });
 }
 
 export function isFreeAccessUser(user: { uid?: string | null; email?: string | null }) {
@@ -612,17 +825,17 @@ export async function requireAiAccess(
   const user = await verifyFirebaseUser(req);
   if (isFreeAccessUser(user)) {
     enforceRateLimit(user.uid, options.feature, options.maxRequests, options.windowMs);
-    return { user, subscription: null, accessSource: "whitelist" as const };
+    return { user, subscription: null, accessSource: "free_access" as const };
   }
 
-  const subscription = await findActiveUserSubscription(getStripe(), user.uid);
+  const { subscription } = await findUserSubscriptionForAccess(getStripe(), user);
 
-  if (!subscription) {
+  if (!subscription || !isAccessSubscriptionStatus(getEffectiveSubscriptionStatus(subscription))) {
     throw createHttpError(403, "An active subscription is required for AI features.");
   }
 
   enforceRateLimit(user.uid, options.feature, options.maxRequests, options.windowMs);
-  return { user, subscription, accessSource: "stripe" as const };
+  return { user, subscription, accessSource: getAccessSourceForSubscriptionStatus(getEffectiveSubscriptionStatus(subscription)) };
 }
 
 function appendCoachOutputInstruction(prompt: string, responseFormat: CoachResponseFormat = "text") {
@@ -780,10 +993,20 @@ async function findOptionalActiveUserSubscription(userId: string) {
 async function getCoachAiAccess(req: any) {
   const user = await verifyFirebaseUser(req);
   const isWhitelisted = isFreeAccessUser(user);
-  const subscription = isWhitelisted ? null : await findOptionalActiveUserSubscription(user.uid);
-  const tier: AiAccessTier = subscription || isWhitelisted ? "paid" : "free";
+  const subscription = isWhitelisted ? null : (await findUserSubscriptionForAccess(getStripe(), user)).subscription;
+  const hasSubscriptionAccess = Boolean(subscription && isAccessSubscriptionStatus(getEffectiveSubscriptionStatus(subscription)));
+  const tier: AiAccessTier = hasSubscriptionAccess || isWhitelisted ? "paid" : "free";
 
-  return { user, subscription, tier, accessSource: isWhitelisted ? "whitelist" : subscription ? "stripe" : "free" };
+  return {
+    user,
+    subscription: hasSubscriptionAccess ? subscription : null,
+    tier,
+    accessSource: isWhitelisted
+      ? "free_access"
+      : hasSubscriptionAccess
+        ? getAccessSourceForSubscriptionStatus(getEffectiveSubscriptionStatus(subscription))
+        : "free",
+  };
 }
 
 function enforceFallbackCoachUsageLimit(userId: string, tier: AiAccessTier) {

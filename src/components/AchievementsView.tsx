@@ -28,6 +28,7 @@ export default function AchievementsView({ achievements, marathonReadying, onBac
       <header className="p-6 flex items-center gap-4 border-b border-zinc-900">
         <button 
           onClick={onBack}
+          aria-label="Back to dashboard"
           className="w-10 h-10 rounded-full bg-zinc-900 flex items-center justify-center border border-zinc-800 hover:bg-zinc-800 transition-colors"
         >
           <ChevronLeft size={20} />
@@ -49,7 +50,7 @@ export default function AchievementsView({ achievements, marathonReadying, onBac
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-zinc-400">
                 <Sparkles size={16} className="text-yellow-400" />
-                <span className="text-xs font-semibold uppercase tracking-normal">Marathon Readying</span>
+                <span className="text-xs font-semibold uppercase tracking-normal">Training Momentum</span>
               </div>
               <span className="rounded-full bg-yellow-400/10 px-3 py-1 text-xs font-bold text-yellow-200">
                 {marathonReadying.achievementPoints} achievement pts

@@ -148,6 +148,8 @@ export default function LiveWorkout({ workout, onComplete, onCancel }: LiveWorko
           },
           { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
         );
+      } else {
+        setGpsStatus('error');
       }
 
       timerRef.current = setInterval(() => {
@@ -214,11 +216,13 @@ export default function LiveWorkout({ workout, onComplete, onCancel }: LiveWorko
     }));
   };
 
+  const controlLabel = isActive ? 'Pause' : seconds > 0 ? 'Resume' : 'Start';
+
   return (
-    <div className="min-h-[100dvh] bg-zinc-950 text-zinc-100 flex flex-col max-w-md mx-auto w-full p-8">
+    <div className="min-h-[100dvh] bg-zinc-950 text-zinc-100 flex flex-col max-w-md mx-auto w-full p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:p-8">
       {/* Header */}
       <div className="flex items-center justify-between mb-12">
-        <button onClick={onCancel} className="p-2 hover:bg-zinc-900 rounded-full transition-colors">
+        <button onClick={onCancel} aria-label="Back to workout details" className="p-2 hover:bg-zinc-900 rounded-full transition-colors">
           <ChevronLeft size={24} />
         </button>
         <div className="flex flex-col items-center">
@@ -226,7 +230,7 @@ export default function LiveWorkout({ workout, onComplete, onCancel }: LiveWorko
             {workout.type}
           </div>
           <div className={cn(
-            "text-[8px] uppercase tracking-[0.2em] font-bold flex items-center gap-1 mt-1",
+            "text-[10px] uppercase tracking-[0.18em] font-bold flex items-center gap-1 mt-1",
             gpsStatus === 'active' ? "text-green-500" : gpsStatus === 'searching' ? "text-yellow-500" : "text-red-500"
           )}>
             <div className={cn("w-1 h-1 rounded-full animate-pulse", gpsStatus === 'active' ? "bg-green-500" : gpsStatus === 'searching' ? "bg-yellow-500" : "bg-red-500")} />
@@ -235,6 +239,18 @@ export default function LiveWorkout({ workout, onComplete, onCancel }: LiveWorko
         </div>
         <div className="w-10" /> 
       </div>
+
+      {gpsStatus === 'error' && (
+        <div role="status" className="-mt-6 mb-8 rounded-2xl border border-yellow-400/20 bg-yellow-400/10 p-4 text-sm leading-6 text-yellow-100">
+          GPS is unavailable. Jogga will save this as a timer-based run, so distance may stay at 0 unless you enter it after finishing.
+        </div>
+      )}
+
+      {gpsStatus === 'searching' && isActive && (
+        <div role="status" className="-mt-6 mb-8 rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4 text-sm leading-6 text-zinc-300">
+          Searching for a clear GPS lock. Keep the phone visible for the most accurate distance.
+        </div>
+      )}
 
       {/* Main Stats */}
       <div className="flex-1 flex flex-col justify-center items-center space-y-12">
@@ -249,21 +265,21 @@ export default function LiveWorkout({ workout, onComplete, onCancel }: LiveWorko
           <div className="text-center space-y-1">
             <div className="flex items-center justify-center gap-2 text-zinc-500">
               <MapPin size={12} />
-              <span className="text-[8px] font-semibold uppercase tracking-widest">Distance</span>
+              <span className="text-[10px] font-semibold uppercase tracking-widest">Distance</span>
             </div>
             <div className="text-2xl font-light tabular-nums">{distance.toFixed(2)}<span className="text-[10px] ml-1 opacity-50">km</span></div>
           </div>
           <div className="text-center space-y-1">
             <div className="flex items-center justify-center gap-2 text-zinc-500">
               <Clock size={12} />
-              <span className="text-[8px] font-semibold uppercase tracking-widest">Pace</span>
+              <span className="text-[10px] font-semibold uppercase tracking-widest">Pace</span>
             </div>
             <div className="text-2xl font-light tabular-nums">{pace}<span className="text-[10px] ml-1 opacity-50">min/km</span></div>
           </div>
           <div className="text-center space-y-1">
             <div className="flex items-center justify-center gap-2 text-zinc-500">
               <Activity size={12} />
-              <span className="text-[8px] font-semibold uppercase tracking-widest">Speed</span>
+              <span className="text-[10px] font-semibold uppercase tracking-widest">Speed</span>
             </div>
             <div className="text-2xl font-light tabular-nums">{speed.toFixed(1)}<span className="text-[10px] ml-1 opacity-50">km/h</span></div>
           </div>
@@ -287,7 +303,7 @@ export default function LiveWorkout({ workout, onComplete, onCancel }: LiveWorko
           <div className="text-right">
             <div className="flex items-center justify-end gap-1 text-[10px] uppercase tracking-widest text-zinc-500">
               <Sparkles size={10} className="text-yellow-400" />
-              <span>Readying</span>
+              <span>Momentum</span>
             </div>
             <div className="text-sm font-medium text-yellow-100">+{readyingPreview}</div>
           </div>
@@ -300,31 +316,41 @@ export default function LiveWorkout({ workout, onComplete, onCancel }: LiveWorko
           <>
             <button 
               onClick={() => setIsActive(!isActive)}
+              aria-label={`${controlLabel} workout`}
               className={cn(
-                "w-20 h-20 rounded-full flex items-center justify-center transition-all active:scale-90 shadow-2xl",
+                "w-20 h-20 rounded-full flex flex-col items-center justify-center gap-1 transition-all active:scale-90 shadow-2xl",
                 isActive ? "bg-zinc-800 text-zinc-100" : "bg-zinc-100 text-zinc-900"
               )}
             >
               {isActive ? <Pause size={32} fill="currentColor" /> : <Play size={32} fill="currentColor" className="ml-1" />}
+              <span className="text-[9px] font-bold uppercase tracking-widest">{controlLabel}</span>
             </button>
             {seconds > 0 && (
               <button 
                 onClick={handleFinish}
-                className="w-16 h-16 rounded-full bg-red-500/20 text-red-500 flex items-center justify-center border border-red-500/30 active:scale-90 transition-all"
+                aria-label="Finish workout"
+                className="w-16 h-16 rounded-full bg-red-500/20 text-red-500 flex flex-col items-center justify-center gap-1 border border-red-500/30 active:scale-90 transition-all"
               >
                 <Square size={24} fill="currentColor" />
+                <span className="text-[8px] font-bold uppercase tracking-widest">Finish</span>
               </button>
             )}
           </>
         ) : (
           <button 
             onClick={handleFinish}
+            aria-label="Finish workout"
             className="bg-zinc-100 text-zinc-900 px-12 py-5 rounded-full font-bold text-lg shadow-2xl active:scale-95 transition-all"
           >
             Finish Workout
           </button>
         )}
       </div>
+      {!isActive && seconds > 0 && !isFinished && (
+        <p className="-mt-8 mb-8 text-center text-[10px] font-bold uppercase tracking-widest text-zinc-600">
+          Paused. Resume this run instead of starting over.
+        </p>
+      )}
     </div>
   );
 }

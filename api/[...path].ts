@@ -10,7 +10,11 @@ import {
   handleStravaAuthUrl,
   handleStravaSync,
 } from "./_strava.js";
-import { sendJson } from "./_utils.js";
+import {
+  enforceSameOrigin,
+  sendError,
+  sendJson,
+} from "./_utils.js";
 
 function getRoutePath(req: any) {
   const path = req.query?.path;
@@ -26,6 +30,22 @@ function getRoutePath(req: any) {
 
 export default async function handler(req: any, res: any) {
   const routePath = getRoutePath(req);
+
+  if (req.method === "OPTIONS") {
+    try {
+      enforceSameOrigin(req, { requireOrigin: true });
+      res.statusCode = 204;
+      res.setHeader("Access-Control-Allow-Origin", req.headers?.origin || "");
+      res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+      res.setHeader("Access-Control-Max-Age", "600");
+      res.setHeader("Vary", "Origin");
+      res.end();
+      return;
+    } catch (error) {
+      return sendError(res, error);
+    }
+  }
 
   // Strava/Runna competitive context May 2026: Vercel Hobby caps the app at
   // 12 functions, so Strava Free import and billing routes share this

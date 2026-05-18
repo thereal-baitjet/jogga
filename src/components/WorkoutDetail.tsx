@@ -1,8 +1,9 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { ChevronLeft, Play, Info, AlertCircle, Clock, MapPin, Gauge, CheckCircle2, Sparkles, Zap } from 'lucide-react';
+import { ChevronLeft, Play, Info, AlertCircle, Clock, MapPin, Gauge, CheckCircle2, Sparkles, Zap, Activity as ActivityIcon } from 'lucide-react';
 import { Workout, WorkoutType } from '../types';
 import { cn } from '../lib/utils';
+import { todayISO } from '../lib/date';
 import { getWorkoutReadyingEarned, getWorkoutReadyingPreview } from '../services/marathonReadyingService';
 import { getCompletedDistanceLabel, getCompletedDurationLabel, getMeasurementLabel } from '../services/runMetricsService';
 
@@ -26,6 +27,7 @@ const TYPE_COLORS: Record<WorkoutType, string> = {
 
 export default function WorkoutDetail({ workout, onBack, onStart }: WorkoutDetailProps) {
   const isCompleted = workout.status === 'completed';
+  const isCompletedToday = isCompleted && workout.date === todayISO();
   const readyingPreview = getWorkoutReadyingPreview(workout);
   const readyingEarned = getWorkoutReadyingEarned(workout);
   const feedbackReward = workout.result?.feedbackReward;
@@ -37,17 +39,23 @@ export default function WorkoutDetail({ workout, onBack, onStart }: WorkoutDetai
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col max-w-md mx-auto w-full relative">
       {/* Hero Section */}
-      <div className="relative h-72 shrink-0 overflow-hidden">
-        <img 
-          src={`https://picsum.photos/seed/${workout.type}/800/600?blur=2`} 
-          alt={workout.type}
-          className="w-full h-full object-cover opacity-40"
-          referrerPolicy="no-referrer"
+      <div className="relative h-72 shrink-0 overflow-hidden bg-zinc-900">
+        <div
+          className="absolute inset-0 opacity-80"
+          style={{
+            backgroundImage: 'linear-gradient(135deg, rgba(250,204,21,0.18) 0%, rgba(39,39,42,0.92) 44%, rgba(9,9,11,1) 100%)',
+          }}
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/50 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 h-40 border-t border-yellow-400/20 bg-[linear-gradient(90deg,transparent_0,transparent_22px,rgba(250,204,21,0.18)_23px,transparent_24px)] bg-[length:44px_100%] opacity-70" />
+        <div className="absolute right-6 top-12 rounded-2xl border border-zinc-700 bg-zinc-950/70 px-4 py-3 backdrop-blur">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Target Effort</div>
+          <div className="mt-1 text-2xl font-light text-zinc-50">{workout.effortTarget}/10</div>
+        </div>
+        <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/45 to-transparent" />
         
         <button 
           onClick={onBack}
+          aria-label="Back to dashboard"
           className="absolute top-6 left-6 w-10 h-10 rounded-full bg-zinc-900/80 backdrop-blur-md flex items-center justify-center border border-zinc-800"
         >
           <ChevronLeft size={20} />
@@ -98,7 +106,7 @@ export default function WorkoutDetail({ workout, onBack, onStart }: WorkoutDetai
           )}
           {(workout.paceTarget || (isCompleted && workout.result?.avgPace)) && (
             <div className="bg-zinc-900/50 rounded-2xl p-4 border border-zinc-800/50 flex items-center gap-3">
-              <Activity size={18} className="text-zinc-500" />
+              <ActivityIcon size={18} className="text-zinc-500" />
               <div>
                 <div className="text-[10px] uppercase tracking-widest text-zinc-500">
                   {isCompleted ? 'Average Pace' : 'Target Pace'}
@@ -120,11 +128,11 @@ export default function WorkoutDetail({ workout, onBack, onStart }: WorkoutDetai
           )}
         </div>
 
-        {/* Marathon Readying */}
+        {/* Training Momentum */}
         <section className="space-y-4">
           <div className="flex items-center gap-2 text-zinc-400">
             <Sparkles size={16} className="text-yellow-400" />
-            <h2 className="text-sm font-semibold uppercase tracking-normal">Marathon Readying</h2>
+            <h2 className="text-sm font-semibold uppercase tracking-normal">Training Momentum</h2>
           </div>
           <div className="rounded-2xl border border-yellow-400/20 bg-zinc-900 p-5 space-y-4">
             <div className="flex items-center justify-between gap-4">
@@ -151,6 +159,12 @@ export default function WorkoutDetail({ workout, onBack, onStart }: WorkoutDetai
                 {feedbackReward.feedbackSummary}
               </div>
             )}
+
+            {isCompletedToday && (
+              <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3 text-xs leading-relaxed text-zinc-400">
+                This run is already saved for today. During a live workout, use pause and resume instead of starting another copy.
+              </div>
+            )}
           </div>
         </section>
 
@@ -164,51 +178,6 @@ export default function WorkoutDetail({ workout, onBack, onStart }: WorkoutDetai
             "{workout.instructions}"
           </div>
         </section>
-
-        {/* Run Map (if completed) */}
-        {isCompleted && workout.result?.path && workout.result.path.length > 1 && (
-          <section className="space-y-4">
-            <div className="flex items-center gap-2 text-zinc-400">
-              <MapPin size={16} />
-              <h2 className="text-sm font-semibold uppercase tracking-widest">Run Map</h2>
-            </div>
-            <div className="bg-zinc-900 rounded-2xl p-4 border border-zinc-800 flex justify-center overflow-hidden">
-              {(() => {
-                const path = workout.result.path;
-                const lats = path.map(p => p.lat);
-                const lngs = path.map(p => p.lng);
-                const minLat = Math.min(...lats);
-                const maxLat = Math.max(...lats);
-                const minLng = Math.min(...lngs);
-                const maxLng = Math.max(...lngs);
-
-                const width = 300;
-                const height = 150;
-                const padding = 20;
-
-                const scaleX = (lng: number) => padding + ((lng - minLng) / (maxLng - minLng || 1)) * (width - 2 * padding);
-                const scaleY = (lat: number) => height - (padding + ((lat - minLat) / (maxLat - minLat || 1)) * (height - 2 * padding));
-
-                const points = path.map(p => `${scaleX(p.lng)},${scaleY(p.lat)}`).join(' ');
-
-                return (
-                  <svg width={width} height={height} className="overflow-visible">
-                    <polyline
-                      points={points}
-                      fill="none"
-                      stroke="#22c55e"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <circle cx={scaleX(path[0].lng)} cy={scaleY(path[0].lat)} r="4" fill="#3b82f6" />
-                    <circle cx={scaleX(path[path.length - 1].lng)} cy={scaleY(path[path.length - 1].lat)} r="4" fill="#ef4444" />
-                  </svg>
-                );
-              })()}
-            </div>
-          </section>
-        )}
 
         {/* Why this workout? */}
         <section className="space-y-4">
@@ -238,7 +207,7 @@ export default function WorkoutDetail({ workout, onBack, onStart }: WorkoutDetai
           {isCompleted ? (
             <>
               <CheckCircle2 size={24} />
-              Workout Completed
+              {isCompletedToday ? 'Run Saved Today' : 'Workout Completed'}
             </>
           ) : (
             <>
@@ -249,23 +218,5 @@ export default function WorkoutDetail({ workout, onBack, onStart }: WorkoutDetai
         </button>
       </div>
     </div>
-  );
-}
-
-function Activity({ size, className }: { size: number, className?: string }) {
-  return (
-    <svg 
-      width={size} 
-      height={size} 
-      viewBox="0 0 24 24" 
-      fill="none" 
-      stroke="currentColor" 
-      strokeWidth="2" 
-      strokeLinecap="round" 
-      strokeLinejoin="round" 
-      className={className}
-    >
-      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-    </svg>
   );
 }

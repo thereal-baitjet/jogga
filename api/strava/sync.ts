@@ -153,7 +153,10 @@ export async function syncStravaActivitiesForUser(userId: string, accessToken?: 
 
   const response = await axios.get(`${STRAVA_API_URL}/athlete/activities`, {
     headers: { Authorization: `Bearer ${token}` },
-    params: { per_page: 30 },
+    params: {
+      after: Math.floor((Date.now() - 28 * 24 * 60 * 60 * 1000) / 1000),
+      per_page: 100,
+    },
   });
 
   const activities = Array.isArray(response.data)
@@ -184,6 +187,8 @@ export async function syncStravaActivitiesForUser(userId: string, accessToken?: 
 
   return {
     activitiesImported: activities.length,
+    runsImported: summary.recentRunCount,
+    noRecentRuns: summary.recentRunCount === 0,
     summary,
     refreshed: Object.keys(tokenUpdate).length > 0,
   };
@@ -211,7 +216,11 @@ export default async function handler(req: any, res: any) {
     if (axios.isAxiosError(error)) {
       const status = error.response?.status || 500;
       if (status === 401) {
-        return sendJson(res, 401, { error: "Strava authorization expired. Reconnect Strava Free." });
+        return sendJson(res, 401, {
+          error: "Reconnect Strava",
+          code: "STRAVA_RECONNECT_REQUIRED",
+          detail: "Strava authorization expired. Reconnect Strava Free.",
+        });
       }
       return sendJson(res, status, { error: error.response?.data?.message || error.message || "Strava sync failed" });
     }

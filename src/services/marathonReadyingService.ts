@@ -126,8 +126,8 @@ export function buildWorkoutReadyingEvent(workout: Workout): MarathonReadyingEve
 
   return {
     id: `${workout.id}-${workout.result?.completedAt || Date.now()}`,
-    title: feedbackReward ? 'Readying banked' : 'Run readiness banked',
-    message: feedbackReward?.rewardCue || `${workout.type} completed. Marathon readiness moved forward.`,
+    title: feedbackReward ? 'Momentum banked' : 'Run momentum banked',
+    message: feedbackReward?.rewardCue || `${workout.type} completed. Training momentum moved forward.`,
     points,
     createdAt: workout.result?.completedAt || new Date().toISOString(),
     tone: feedbackReward ? 'feedback' : 'completion',

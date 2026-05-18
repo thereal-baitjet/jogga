@@ -27,7 +27,10 @@ export default async function handler(req: any, res: any) {
     if (!isFreeAccessUser(user)) {
       return sendJson(res, 200, {
         unlocked: false,
-        accessSource: null,
+        accessSource: "none",
+        subscriptionStatus: null,
+        customerId: null,
+        reason: "not_whitelisted",
       });
     }
 
@@ -37,7 +40,7 @@ export default async function handler(req: any, res: any) {
     try {
       await getFirebaseAdminDb().collection("users").doc(user.uid).set({
         isUnlocked: true,
-        accessSource: "whitelist",
+        accessSource: "free_access",
         subscriptionStatus: "whitelisted",
         subscriptionPlan: "tester",
         subscriptionVerifiedAt: now,
@@ -54,10 +57,12 @@ export default async function handler(req: any, res: any) {
 
     return sendJson(res, 200, {
       unlocked: true,
-      accessSource: "whitelist",
+      accessSource: "free_access",
       subscriptionStatus: "whitelisted",
       subscriptionPlan: "tester",
       subscriptionVerifiedAt: now,
+      customerId: null,
+      reason: getFreeAccessReason(user) || "free_access",
       persisted,
     });
   } catch (error) {

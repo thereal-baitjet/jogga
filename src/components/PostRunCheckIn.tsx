@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'motion/react';
-import { CheckCircle2, Star, MessageSquare, ChevronRight, Activity, Zap, MapPin, Sparkles, Trophy, Info } from 'lucide-react';
+import { CheckCircle2, Star, MessageSquare, ChevronRight, Activity, Zap, Sparkles, Trophy, Info } from 'lucide-react';
 import { LiveWorkoutData, Workout, WorkoutResult } from '../types';
 import { cn } from '../lib/utils';
 import { AIServiceError, getCachedAIResponse } from '../services/geminiService';
@@ -36,6 +36,21 @@ const riskClasses: Record<RiskLevel, string> = {
   high: 'bg-red-400/10 text-red-200 border-red-400/20',
 };
 
+function formatRunDuration(durationSeconds: number | undefined, durationMinutes: number) {
+  const totalSeconds = Number.isFinite(durationSeconds)
+    ? Math.max(0, Math.round(durationSeconds || 0))
+    : Math.max(0, Math.round(durationMinutes * 60));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s`;
+  }
+
+  return `${minutes}m ${seconds}s`;
+}
+
 export default function PostRunCheckIn({ workout, liveData, onComplete }: PostRunCheckInProps) {
   const [effort, setEffort] = useState(5);
   const [notes, setNotes] = useState('');
@@ -47,6 +62,7 @@ export default function PostRunCheckIn({ workout, liveData, onComplete }: PostRu
   const [isGeneratingOpinion, setIsGeneratingOpinion] = useState(false);
   const isMeasuredRun = Boolean(liveData);
   const measurementLabel = getMeasurementLabel(liveData?.measurementSource);
+  const runDurationLabel = formatRunDuration(liveData?.durationSeconds, actualDuration);
   const completionReadying = useMemo(() => getWorkoutReadyingPreview(workout), [workout]);
   const feedbackReward = useMemo(() => buildFeedbackReward(workout, {
     effort,
@@ -133,113 +149,9 @@ export default function PostRunCheckIn({ workout, liveData, onComplete }: PostRu
       perceivedEffort: effort,
       notes,
       feedbackReward: finalFeedbackReward,
-      path: liveData?.path,
       measurementSource: liveData?.measurementSource || 'manual',
       gpsMetrics: liveData?.gpsMetrics,
     });
-  };
-
-  const renderMap = () => {
-    if (!liveData?.path || liveData.path.length < 2) return null;
-
-    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-    
-    // If we have an API key, use the Static Maps API
-    if (apiKey) {
-      // Encode the path for the Static Maps API
-      // For simplicity, we'll just take a subset of points to avoid URL length limits
-      const step = Math.max(1, Math.floor(liveData.path.length / 50));
-      const sampledPath = liveData.path.filter((_, i) => i % step === 0);
-      const pathStr = sampledPath.map(p => `${p.lat},${p.lng}`).join('|');
-      
-      const start = liveData.path[0];
-      const end = liveData.path[liveData.path.length - 1];
-      
-      const mapUrl = `https://maps.googleapis.com/maps/api/staticmap?size=600x300&scale=2&maptype=roadmap&style=feature:all|element:all|saturation:-100|lightness:-20|visibility:on&style=feature:administrative|element:geometry|visibility:off&style=feature:poi|element:all|visibility:off&style=feature:road|element:all|saturation:-100|visibility:on&style=feature:transit|element:all|visibility:off&style=feature:water|element:all|color:0x000000|visibility:on&path=color:0x10b981|weight:5|${pathStr}&markers=color:blue|label:S|${start.lat},${start.lng}&markers=color:red|label:F|${end.lat},${end.lng}&key=${apiKey}`;
-
-      return (
-        <section className="space-y-4">
-          <div className="flex items-center gap-2 text-zinc-400">
-            <MapPin size={16} />
-            <h2 className="text-xs font-semibold uppercase tracking-widest">Route Analysis</h2>
-          </div>
-          <div className="bg-zinc-900 rounded-3xl overflow-hidden border border-zinc-800 aspect-[2/1] relative group">
-            <img 
-              src={mapUrl} 
-              alt="Run Route" 
-              className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
-              referrerPolicy="no-referrer"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/50 to-transparent pointer-events-none" />
-          </div>
-        </section>
-      );
-    }
-
-    // Fallback to SVG if no API key
-    const lats = liveData.path.map(p => p.lat);
-    const lngs = liveData.path.map(p => p.lng);
-    const minLat = Math.min(...lats);
-    const maxLat = Math.max(...lats);
-    const minLng = Math.min(...lngs);
-    const maxLng = Math.max(...lngs);
-
-    const width = 300;
-    const height = 150;
-    const padding = 20;
-
-    const scaleX = (lng: number) => padding + ((lng - minLng) / (maxLng - minLng || 1)) * (width - 2 * padding);
-    const scaleY = (lat: number) => height - (padding + ((lat - minLat) / (maxLat - minLat || 1)) * (height - 2 * padding));
-
-    const points = liveData.path.map(p => `${scaleX(p.lng)},${scaleY(p.lat)}`).join(' ');
-
-    return (
-      <section className="space-y-4">
-        <div className="flex items-center gap-2 text-zinc-400">
-          <MapPin size={16} />
-          <h2 className="text-xs font-semibold uppercase tracking-widest">Route Analysis (Preview)</h2>
-        </div>
-        <div className="bg-zinc-900 rounded-3xl p-6 border border-zinc-800 flex justify-center overflow-hidden relative">
-          <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
-          
-          <svg width={width} height={height} className="overflow-visible relative z-10">
-            <defs>
-              <linearGradient id="routeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#10b981" />
-                <stop offset="100%" stopColor="#059669" />
-              </linearGradient>
-              <filter id="glow">
-                <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
-                <feMerge>
-                  <feMergeNode in="coloredBlur"/>
-                  <feMergeNode in="SourceGraphic"/>
-                </feMerge>
-              </filter>
-            </defs>
-            <polyline
-              points={points}
-              fill="none"
-              stroke="url(#routeGradient)"
-              strokeWidth="4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              filter="url(#glow)"
-            />
-            <g transform={`translate(${scaleX(liveData.path[0].lng)},${scaleY(liveData.path[0].lat)})`}>
-              <circle r="6" fill="#3b82f6" className="animate-pulse" />
-              <circle r="3" fill="white" />
-            </g>
-            <g transform={`translate(${scaleX(liveData.path[liveData.path.length - 1].lng)},${scaleY(liveData.path[liveData.path.length - 1].lat)})`}>
-              <circle r="6" fill="#ef4444" />
-              <circle r="3" fill="white" />
-            </g>
-          </svg>
-        </div>
-        <p className="text-[8px] text-zinc-600 uppercase tracking-widest text-center">
-          Add a Google Maps API Key to see real terrain data
-        </p>
-      </section>
-    );
   };
 
   return (
@@ -253,8 +165,6 @@ export default function PostRunCheckIn({ workout, liveData, onComplete }: PostRu
       </div>
 
       <div className="space-y-8 flex-1">
-        {renderMap()}
-
         {/* Coach's Opinion */}
         <section className="space-y-4">
           <div className="flex items-center gap-2 text-zinc-400">
@@ -354,6 +264,10 @@ export default function PostRunCheckIn({ workout, liveData, onComplete }: PostRu
               <div className="absolute top-0 right-0 p-4 opacity-5">
                 <Zap size={80} />
               </div>
+              <div className="col-span-2 rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
+                <div className="text-[10px] uppercase tracking-widest text-zinc-500">You ran for</div>
+                <div className="mt-1 text-3xl font-light tabular-nums">{runDurationLabel}</div>
+              </div>
               <div className="space-y-1">
                 <div className="text-[10px] uppercase tracking-widest text-zinc-500">Distance</div>
                 <div className="text-3xl font-light tabular-nums">
@@ -364,7 +278,7 @@ export default function PostRunCheckIn({ workout, liveData, onComplete }: PostRu
               <div className="space-y-1">
                 <div className="text-[10px] uppercase tracking-widest text-zinc-500">Duration</div>
                 <div className="text-3xl font-light tabular-nums">
-                  {actualDuration}
+                  {actualDuration.toFixed(1)}
                   <span className="text-xs ml-1 opacity-50">min</span>
                 </div>
               </div>
@@ -424,8 +338,14 @@ export default function PostRunCheckIn({ workout, liveData, onComplete }: PostRu
             </div>
             <input 
               type="number" 
+              aria-label={isMeasuredRun ? 'Measured distance in kilometers' : 'Distance in kilometers'}
+              min="0"
+              step="0.1"
               value={actualDistance}
-              onChange={(e) => setActualDistance(parseFloat(e.target.value))}
+              onChange={(e) => {
+                const value = parseFloat(e.target.value);
+                setActualDistance(Number.isFinite(value) ? value : 0);
+              }}
               readOnly={isMeasuredRun}
               className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-lg focus:border-zinc-500 outline-none"
             />
@@ -439,8 +359,14 @@ export default function PostRunCheckIn({ workout, liveData, onComplete }: PostRu
             </div>
             <input 
               type="number" 
+              aria-label={isMeasuredRun ? 'Measured duration in minutes' : 'Duration in minutes'}
+              min="0"
+              step="0.5"
               value={actualDuration}
-              onChange={(e) => setActualDuration(parseFloat(e.target.value))}
+              onChange={(e) => {
+                const value = parseFloat(e.target.value);
+                setActualDuration(Number.isFinite(value) ? value : 0);
+              }}
               readOnly={isMeasuredRun}
               className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-lg focus:border-zinc-500 outline-none"
             />
@@ -461,12 +387,12 @@ export default function PostRunCheckIn({ workout, liveData, onComplete }: PostRu
           />
         </section>
 
-        {/* Marathon Readying */}
+        {/* Training Momentum */}
         <section className="space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-zinc-400">
               <Sparkles size={16} className="text-yellow-400" />
-              <h2 className="text-xs font-semibold uppercase tracking-normal">Marathon Readying</h2>
+              <h2 className="text-xs font-semibold uppercase tracking-normal">Training Momentum</h2>
             </div>
             <span className="rounded-full bg-yellow-400/10 px-3 py-1 text-xs font-bold text-yellow-200">
               +{completionReadying + feedbackReward.rewardPoints}
@@ -527,7 +453,7 @@ export default function PostRunCheckIn({ workout, liveData, onComplete }: PostRu
         onClick={handleSubmit}
         className="w-full bg-zinc-100 text-zinc-900 py-5 rounded-full font-bold flex items-center justify-center gap-2 shadow-2xl active:scale-95 transition-all"
       >
-        Save & Update Plan
+        Save Run & Refresh Readiness
         <ChevronRight size={20} />
       </button>
     </div>

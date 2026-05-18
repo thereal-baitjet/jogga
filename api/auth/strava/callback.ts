@@ -57,19 +57,31 @@ export default async function handler(req: any, res: any) {
     return res.end("Method not allowed");
   }
 
+  const code = Array.isArray(req.query.code) ? req.query.code[0] : req.query.code;
+  const state = Array.isArray(req.query.state) ? req.query.state[0] : req.query.state;
+  const callbackScope = Array.isArray(req.query.scope) ? req.query.scope[0] : req.query.scope;
   const error = Array.isArray(req.query.error) ? req.query.error[0] : req.query.error;
+  let stateUid: string | null = null;
+
   if (error) {
+    try {
+      stateUid = verifySignedStravaState(state).uid;
+    } catch {
+      stateUid = null;
+    }
+
     return renderOAuthResult(
       res,
-      { type: "OAUTH_AUTH_ERROR", provider: "strava", error },
+      {
+        type: "OAUTH_AUTH_ERROR",
+        provider: "strava",
+        error,
+        ...(stateUid ? { uid: stateUid } : {}),
+      },
       "Strava Not Connected",
       "Jogga did not receive permission to import your runs."
     );
   }
-
-  const code = Array.isArray(req.query.code) ? req.query.code[0] : req.query.code;
-  const state = Array.isArray(req.query.state) ? req.query.state[0] : req.query.state;
-  const callbackScope = Array.isArray(req.query.scope) ? req.query.scope[0] : req.query.scope;
 
   if (!code) {
     res.statusCode = 400;
@@ -83,6 +95,7 @@ export default async function handler(req: any, res: any) {
 
   try {
     const statePayload = verifySignedStravaState(state);
+    stateUid = statePayload.uid;
     const response = await axios.post(
       STRAVA_TOKEN_URL,
       new URLSearchParams({
@@ -115,6 +128,7 @@ export default async function handler(req: any, res: any) {
           type: "OAUTH_AUTH_ERROR",
           provider: "strava",
           error: "missing_scope",
+          uid: statePayload.uid,
           scopes,
           requiredScopes: [...STRAVA_SCOPES],
         },
@@ -167,6 +181,7 @@ export default async function handler(req: any, res: any) {
       {
         type: "OAUTH_AUTH_SUCCESS",
         provider: "strava",
+        uid: statePayload.uid,
         connection,
         sync: syncResult,
       },
@@ -181,6 +196,7 @@ export default async function handler(req: any, res: any) {
         type: "OAUTH_AUTH_ERROR",
         provider: "strava",
         error: error.message || "Strava authentication failed",
+        ...(stateUid ? { uid: stateUid } : {}),
       },
       "Strava Connection Failed",
       "Close this window and try again from Jogga."

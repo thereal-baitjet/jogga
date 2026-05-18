@@ -1,13 +1,10 @@
 import React, { Suspense, useState, useEffect, useRef } from 'react';
-import { UserProfile, Workout, ReadinessScore, WorkoutResult, Achievement, HealthMetric, MarathonReadyingEvent, LiveWorkoutData } from './types';
+import { UserProfile, Workout, ReadinessScore, WorkoutResult, Achievement, MarathonReadyingEvent, LiveWorkoutData } from './types';
 import { calculateReadiness } from './services/readinessService';
 import {
   generatePlanForProfile,
   generateRenderablePlan,
   getPlanReadyProfile,
-  canUseApp,
-  hasActiveSubscription,
-  hasPriorSubscription,
   hasRenderableTrainingPlan,
   mergeWorkoutPlans,
 } from './services/planService';
@@ -19,9 +16,7 @@ import { Zap } from 'lucide-react';
 import { auth, authPersistenceReady, db, googleProvider } from './firebase';
 import {
   getRedirectResult,
-  GoogleAuthProvider,
   onAuthStateChanged,
-  reauthenticateWithPopup,
   signInWithPopup,
   signInWithRedirect,
   signOut,
@@ -31,10 +26,24 @@ import { doc, setDoc, collection, onSnapshot, query, writeBatch, getDocs, runTra
 import { isDateBeforeToday, parseLocalDate, todayISO } from './lib/date';
 import { buildMarathonReadyingProfile, buildWorkoutReadyingEvent } from './services/marathonReadyingService';
 import { getActualDistance } from './services/runMetricsService';
-import { isCordovaRuntime, reauthenticateWithCordovaGoogle, signInWithCordovaGoogle } from './services/cordovaOAuthService';
+import { isCordovaRuntime, signInWithCordovaGoogle } from './services/cordovaOAuthService';
 import { buildCompletedWorkoutForFirestore, sanitizeWorkoutResultForFirestore } from './services/firestoreDataService';
 import { setAnalyticsUser, trackEvent, trackPageView } from './services/analyticsService';
-import { buildHealthMetricCards, normalizeHealthSyncResponse } from './services/healthMetricsService';
+import {
+  buildStravaProfileUpdateFromSync,
+  calculateReadinessFromStravaProfile,
+} from './services/stravaHealthMetricsService';
+import {
+  createCheckingUserAccess,
+  createLoggedOutUserAccess,
+  fetchFreeAccessStatus,
+  fetchSubscriptionStatus,
+  getFirebaseIdToken,
+  resolveUserAccess,
+  shouldShowPaywall,
+  type AccessStatusResponse,
+  type UserAccess,
+} from './services/accessControlService';
 import { CHECKOUT_INTENT_STORAGE_KEY, CheckoutIntent, normalizeBillingPlanId } from './config/billing';
 
 const Onboarding = React.lazy(() => import('./components/Onboarding'));
@@ -149,13 +158,6 @@ function readStoredCheckoutIntent() {
   }
 }
 
-const GOOGLE_HEALTH_SCOPES = [
-  'https://www.googleapis.com/auth/fitness.activity.read',
-  'https://www.googleapis.com/auth/fitness.body.read',
-  'https://www.googleapis.com/auth/fitness.heart_rate.read',
-  'https://www.googleapis.com/auth/fitness.sleep.read',
-];
-
 enum OperationType {
   CREATE = 'create',
   UPDATE = 'update',
@@ -183,41 +185,6 @@ interface FirestoreErrorInfo {
       photoUrl: string | null;
     }[];
   }
-}
-
-interface SubscriptionAccessResponse {
-  unlocked?: boolean;
-  serverFulfilled?: boolean;
-  customerId?: string | null;
-  subscriptionId?: string | null;
-  subscriptionStatus?: string | null;
-  priceId?: string | null;
-  planId?: string | null;
-}
-
-interface FreeAccessResponse {
-  unlocked?: boolean;
-  accessSource?: string | null;
-  subscriptionStatus?: string | null;
-  subscriptionPlan?: string | null;
-  subscriptionVerifiedAt?: string | null;
-  persisted?: boolean;
-}
-
-async function fetchFreeAccessStatus(currentUser: User): Promise<FreeAccessResponse> {
-  const idToken = await currentUser.getIdToken();
-  const response = await fetch('/api/free-access/status', {
-    headers: {
-      Authorization: `Bearer ${idToken}`,
-    },
-  });
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data.error || 'Free access check failed.');
-  }
-
-  return data;
 }
 
 function buildFirestoreErrorInfo(error: unknown, operationType: OperationType, path: string | null): FirestoreErrorInfo {
@@ -295,15 +262,6 @@ function isCompleteUserProfile(profile: Partial<UserProfile> | null | undefined)
   );
 }
 
-function hasPremiumAccess(profile: Partial<UserProfile> | null | undefined) {
-  return (
-    hasActiveSubscription(profile) ||
-    profile?.accessSource === 'admin' ||
-    profile?.accessSource === 'whitelist' ||
-    profile?.subscriptionStatus === 'whitelisted'
-  );
-}
-
 function getPrimaryAuthProvider(currentUser: User) {
   return currentUser.providerData[0]?.providerId || 'firebase';
 }
@@ -330,12 +288,17 @@ async function ensureUserDocument(currentUser: User) {
     const userSnap = await transaction.get(userRef);
 
     if (userSnap.exists()) {
-      transaction.set(userRef, userRecord, { merge: true });
+      const existingRecord = userSnap.data();
+      transaction.set(userRef, {
+        ...userRecord,
+        ...(!existingRecord.privacyDefault ? { privacyDefault: 'private' } : {}),
+      }, { merge: true });
       return;
     }
 
     transaction.set(userRef, {
       ...userRecord,
+      privacyDefault: 'private',
       createdAt: now,
     });
   });
@@ -375,7 +338,7 @@ export default function App() {
   const [appToast, setAppToast] = useState<string | null>(null);
   const [currentDate, setCurrentDate] = useState(() => todayISO());
   const [screen, setScreen] = useState<Screen>('auth');
-  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [userAccess, setUserAccess] = useState<UserAccess>(() => createLoggedOutUserAccess());
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [userRecord, setUserRecord] = useState<Partial<UserProfile> | null>(null);
   const [hasProfileLoaded, setHasProfileLoaded] = useState(false);
@@ -391,17 +354,29 @@ export default function App() {
   const [isRestoringSubscriptionAccess, setIsRestoringSubscriptionAccess] = useState(false);
   const screenRef = useRef(screen);
   const processedStripeSessionRef = useRef<string | null>(null);
-  const checkedSubscriptionRecoveryRef = useRef<string | null>(null);
   const completedOnboardingUidRef = useRef<string | null>(null);
   const planRecoveryKeyRef = useRef<string | null>(null);
+  const accessCheckIdRef = useRef(0);
   const accessRecord = React.useMemo(() => (
-    profile || userRecord ? { ...userRecord, ...profile } : null
-  ), [profile, userRecord]);
+    profile || userRecord || user
+      ? {
+          ...userRecord,
+          ...profile,
+          isUnlocked: userAccess.unlocked,
+          accessSource: userAccess.accessSource !== 'none' ? userAccess.accessSource : userRecord?.accessSource || profile?.accessSource,
+          stripeCustomerId: userAccess.customerId || userRecord?.stripeCustomerId || profile?.stripeCustomerId || null,
+          stripeSubscriptionId: userAccess.subscriptionId || userRecord?.stripeSubscriptionId || profile?.stripeSubscriptionId || null,
+          stripePriceId: userAccess.priceId || userRecord?.stripePriceId || profile?.stripePriceId || null,
+          subscriptionStatus: userAccess.subscriptionStatus || userRecord?.subscriptionStatus || profile?.subscriptionStatus || null,
+          subscriptionPlan: userAccess.planId || userRecord?.subscriptionPlan || profile?.subscriptionPlan || null,
+        }
+      : null
+  ), [profile, user, userAccess, userRecord]);
   const renderedPlan = React.useMemo(() => (
-    profile && hasPremiumAccess(accessRecord)
+    profile && userAccess.unlocked
       ? generateRenderablePlan(profile, plan, currentDate)
       : plan
-  ), [accessRecord, currentDate, plan, profile]);
+  ), [currentDate, plan, profile, userAccess.unlocked]);
 
   const savePendingCheckoutIntent = React.useCallback((intent: CheckoutIntent) => {
     setPendingCheckoutIntent(intent);
@@ -436,7 +411,7 @@ export default function App() {
     }
   }, []);
 
-  const applySubscriptionAccess = async (data: SubscriptionAccessResponse) => {
+  const applySubscriptionAccess = async (data: AccessStatusResponse) => {
     if (!user || !data.unlocked) return false;
 
     const now = new Date().toISOString();
@@ -446,13 +421,13 @@ export default function App() {
       stripeSubscriptionId: data.subscriptionId ?? userRecord?.stripeSubscriptionId ?? profile?.stripeSubscriptionId ?? null,
       stripePriceId: data.priceId ?? userRecord?.stripePriceId ?? profile?.stripePriceId ?? null,
       subscriptionStatus: data.subscriptionStatus ?? userRecord?.subscriptionStatus ?? profile?.subscriptionStatus ?? null,
+      accessSource: data.accessSource || 'stripe_subscription',
       subscriptionPlan: data.planId ?? userRecord?.subscriptionPlan ?? profile?.subscriptionPlan ?? null,
       subscriptionVerifiedAt: now,
       updatedAt: now,
     };
 
     const mergedRecord = { ...userRecord, ...profile, ...subscriptionUpdate };
-    setIsUnlocked(true);
     setUserRecord(mergedRecord);
 
     if (isCompleteUserProfile(mergedRecord)) {
@@ -463,69 +438,108 @@ export default function App() {
     return false;
   };
 
-  const applyFreeAccess = (data: FreeAccessResponse) => {
-    if (!user || !data.unlocked) return false;
-
+  const mergeResolvedAccessState = React.useCallback((nextAccess: UserAccess) => {
     const now = new Date().toISOString();
-    const freeAccessUpdate: Partial<UserProfile> = {
-      isUnlocked: true,
-      accessSource: data.accessSource || 'whitelist',
-      subscriptionStatus: data.subscriptionStatus || 'whitelisted',
-      subscriptionPlan: data.subscriptionPlan || 'tester',
-      subscriptionVerifiedAt: data.subscriptionVerifiedAt || now,
+    const accessUpdate: Partial<UserProfile> = {
+      isUnlocked: nextAccess.unlocked,
+      accessSource: nextAccess.accessSource === 'none' ? null : nextAccess.accessSource,
+      stripeCustomerId: nextAccess.customerId,
+      stripeSubscriptionId: nextAccess.subscriptionId,
+      stripePriceId: nextAccess.priceId,
+      subscriptionStatus: nextAccess.subscriptionStatus,
+      subscriptionPlan: nextAccess.planId,
+      subscriptionVerifiedAt: nextAccess.checkedAt || now,
       updatedAt: now,
     };
-    const mergedRecord = { ...userRecord, ...profile, ...freeAccessUpdate };
 
-    setIsUnlocked(true);
-    setUserRecord(mergedRecord);
-    if (isCompleteUserProfile(mergedRecord)) {
-      setProfile(mergedRecord);
-      return true;
+    setUserRecord(previousRecord => ({
+      ...previousRecord,
+      ...accessUpdate,
+    }));
+    setProfile(previousProfile => (
+      previousProfile
+        ? {
+            ...previousProfile,
+            ...accessUpdate,
+          }
+        : previousProfile
+    ));
+  }, []);
+
+  const runUserAccessCheck = React.useCallback(async (currentUser: User, source: string) => {
+    const requestId = ++accessCheckIdRef.current;
+    setUserAccess(createCheckingUserAccess(currentUser));
+
+    const tokenResult = await getFirebaseIdToken(currentUser).then(
+      () => true,
+      (error) => {
+        throw error;
+      }
+    );
+
+    const [freeAccessResult, subscriptionResult] = await Promise.allSettled([
+      fetchFreeAccessStatus(currentUser),
+      fetchSubscriptionStatus(currentUser),
+    ]);
+
+    if (accessCheckIdRef.current !== requestId) {
+      return null;
     }
 
-    return false;
-  };
+    const freeAccess = freeAccessResult.status === 'fulfilled' ? freeAccessResult.value : null;
+    const subscription = subscriptionResult.status === 'fulfilled' ? subscriptionResult.value : null;
+    const errors = [
+      freeAccessResult.status === 'rejected' ? freeAccessResult.reason : null,
+      subscriptionResult.status === 'rejected' ? subscriptionResult.reason : null,
+    ].filter(Boolean);
+    const nextAccess = resolveUserAccess({
+      user: currentUser,
+      idTokenPresent: tokenResult,
+      freeAccess,
+      subscription,
+      errors,
+    });
+
+    setUserAccess(nextAccess);
+    mergeResolvedAccessState(nextAccess);
+
+    if (import.meta.env.DEV) {
+      console.groupCollapsed(`[Jogga access] ${source}: ${nextAccess.unlocked ? 'unlocked' : 'blocked'} (${nextAccess.reason})`);
+      console.info({
+        signedIn: nextAccess.isAuthenticated,
+        uid: nextAccess.uid,
+        email: nextAccess.email,
+        idTokenPresent: nextAccess.idTokenPresent,
+        freeAccess,
+        subscription,
+        finalUnlockedDecision: nextAccess.unlocked,
+        blockReason: nextAccess.unlocked ? null : nextAccess.reason,
+      });
+      console.groupEnd();
+    }
+
+    return nextAccess;
+  }, [mergeResolvedAccessState]);
 
   const restoreSubscriptionAccess = async () => {
     if (!user) return false;
 
     setIsRestoringSubscriptionAccess(true);
     try {
-      const freeAccess = await fetchFreeAccessStatus(user);
-      if (freeAccess.unlocked) {
-        const hasCompleteProfile = applyFreeAccess(freeAccess);
-        trackEvent('free_access_restored', {
-          access_source: freeAccess.accessSource || 'whitelist',
-          persisted: Boolean(freeAccess.persisted),
-        });
-        setScreen(hasCompleteProfile ? 'dashboard' : 'onboarding');
-        return true;
-      }
-
-      const idToken = await user.getIdToken();
-      const response = await fetch(`/api/subscription-status?userId=${encodeURIComponent(user.uid)}`, {
-        headers: {
-          'Authorization': `Bearer ${idToken}`,
-        },
-      });
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Unable to verify subscription status.');
-      }
-
-      if (!data.unlocked) {
+      const access = await runUserAccessCheck(user, 'manual_restore');
+      if (!access?.unlocked) {
         trackEvent('subscription_restore', { result: 'inactive' });
         return false;
       }
 
-      const hasCompleteProfile = await applySubscriptionAccess(data);
-      trackEvent('subscription_restore', {
+      trackEvent(access.isFreeAccess ? 'free_access_restored' : 'subscription_restore', {
         result: 'active',
-        subscription_status: data.subscriptionStatus,
-        plan_id: data.planId,
+        access_source: access.accessSource,
+        subscription_status: access.subscriptionStatus,
+        plan_id: access.planId,
       });
+      const nextRecord = { ...userRecord, ...profile, isUnlocked: true };
+      const hasCompleteProfile = isCompleteUserProfile(nextRecord);
       setScreen(hasCompleteProfile ? 'dashboard' : 'onboarding');
       return true;
     } catch (error) {
@@ -585,10 +599,10 @@ export default function App() {
   }, [appToast]);
 
   useEffect(() => {
-    if (isUnlocked && pendingCheckoutIntent) {
+    if (userAccess.unlocked && pendingCheckoutIntent) {
       clearPendingCheckoutIntent();
     }
-  }, [clearPendingCheckoutIntent, isUnlocked, pendingCheckoutIntent]);
+  }, [clearPendingCheckoutIntent, pendingCheckoutIntent, userAccess.unlocked]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -601,8 +615,6 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, []);
   const [liveWorkoutData, setLiveWorkoutData] = useState<LiveWorkoutData | null>(null);
-  const [fitbitTokens, setFitbitTokens] = useState<any>(null); // Keeping name for now or renaming to healthTokens
-  const [healthTokens, setHealthTokens] = useState<any>(null);
   const [achievements, setAchievements] = useState<Achievement[]>([
     { id: '1', title: 'First Run', description: 'Complete your first workout.', iconName: 'medal', category: 'milestone' },
     { id: '2', title: 'Early Bird', description: 'Complete a workout before 7 AM.', iconName: 'zap', category: 'milestone' },
@@ -682,82 +694,95 @@ export default function App() {
     setAchievements(updatedAchievements);
   }, [plan]);
 
-  const [healthMetrics, setHealthMetrics] = useState<HealthMetric[]>(() => buildHealthMetricCards({
-    date: todayISO(),
-    steps: 0,
-    distanceKm: 0,
-    activeCalories: 0,
-    avgHeartRate: null,
-    sleepMinutes: 0,
-    sleepScore: null,
-    weightKg: null,
-    source: 'google_fit',
-    syncedAt: new Date().toISOString(),
-    persisted: false,
-  }));
   const [readiness, setReadiness] = useState<ReadinessScore>(() => createEmptyReadiness());
   const marathonReadying = React.useMemo(() => buildMarathonReadyingProfile(renderedPlan, achievements), [achievements, renderedPlan]);
   const clearReadyingEvent = React.useCallback(() => setReadyingEvent(null), []);
 
-  // Calculate Readiness based on recent workouts
+  // Calculate readiness from Strava when available. Strava/Runna competitive
+  // context May 2026: Strava is the running data source; Jogga adds private
+  // readiness and coaching on top rather than competing with GPS tracking.
   useEffect(() => {
-    setReadiness(calculateReadiness(plan));
-  }, [plan]);
+    const planReadiness = calculateReadiness(plan);
+    setReadiness(
+      profile?.isStravaConnected
+        ? calculateReadinessFromStravaProfile(profile, planReadiness)
+        : planReadiness
+    );
+  }, [
+    plan,
+    profile?.isStravaConnected,
+    profile?.stravaLastSyncAt,
+    profile?.stravaRecentDistanceKm,
+    profile?.stravaRecentDurationHours,
+    profile?.stravaRecentElevationMeters,
+    profile?.stravaRecentLoad,
+    profile?.stravaRecentRunCount,
+  ]);
 
   // Firebase Auth Listener
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setIsAuthReady(true);
-      if (currentUser) {
-        setAuthError(null);
-        setDatabaseError(null);
-        void ensureUserDocument(currentUser).catch((error) => {
-          console.error('Failed to initialize Firestore user document', error);
-          setDatabaseError(getFirestoreUserMessage(error));
-        });
-      }
-      if (!currentUser) {
-        setProfile(null);
-        setUserRecord(null);
-        setHasProfileLoaded(false);
-        setDatabaseError(null);
-        setScreen('auth');
-      }
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+
+    // Wait for browserLocalPersistence before routing. A refresh should not
+    // briefly look logged out while Firebase restores the cached session.
+    authPersistenceReady.then(() => {
+      if (cancelled) return;
+
+      unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+        setUser(currentUser);
+        setIsAuthReady(true);
+        if (currentUser) {
+          setAuthError(null);
+          setDatabaseError(null);
+          void ensureUserDocument(currentUser).catch((error) => {
+            console.error('Failed to initialize Firestore user document', error);
+            setDatabaseError(getFirestoreUserMessage(error));
+          });
+        }
+        if (!currentUser) {
+          setProfile(null);
+          setUserRecord(null);
+          setHasProfileLoaded(false);
+          setDatabaseError(null);
+          setScreen('auth');
+        }
+      });
     });
-    return () => unsubscribe();
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
   }, []);
 
   useEffect(() => {
-    if (!user) return;
+    if (!isAuthReady) return;
+
+    if (!user) {
+      accessCheckIdRef.current++;
+      setUserAccess(createLoggedOutUserAccess());
+      return;
+    }
 
     let cancelled = false;
 
-    const checkFreeAccess = async () => {
-      try {
-        const data = await fetchFreeAccessStatus(user);
+    runUserAccessCheck(user, 'auth_boot').catch((error) => {
+      if (cancelled) return;
 
-        if (!data.unlocked || cancelled) return;
-
-        const hasCompleteProfile = applyFreeAccess(data);
-        if (screenRef.current === 'auth' || screenRef.current === 'subscription') {
-          setScreen(hasCompleteProfile ? 'dashboard' : 'onboarding');
-        }
-        trackEvent('free_access_verified', {
-          access_source: data.accessSource || 'whitelist',
-          persisted: Boolean(data.persisted),
-        });
-      } catch (error) {
-        console.error('Free access check failed', error);
-      }
-    };
-
-    void checkFreeAccess();
+      const nextAccess = resolveUserAccess({
+        user,
+        idTokenPresent: false,
+        errors: [error],
+      });
+      setUserAccess(nextAccess);
+      console.error('Access check failed', error);
+    });
 
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [isAuthReady, runUserAccessCheck, subscriptionRefreshNonce, user]);
 
   useEffect(() => {
     let isMounted = true;
@@ -787,20 +812,15 @@ export default function App() {
       if (event.origin !== window.location.origin) return;
 
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
-        if (event.data.provider === 'google') {
-          setHealthTokens(event.data.tokens);
-          if (profile && user) {
-            const updatedProfile = { 
-              ...profile, 
-              isHealthConnected: true, 
-              healthProvider: 'google' as const 
-            };
-            setProfile(updatedProfile);
-            setDoc(doc(db, 'users', user.uid), updatedProfile, { merge: true });
-          }
-        }
-
         if (event.data.provider === 'strava') {
+          const currentUser = auth.currentUser || user;
+          const callbackUid = typeof event.data.uid === 'string' ? event.data.uid : null;
+
+          if (!currentUser || callbackUid !== currentUser.uid) {
+            setAppToast('Strava connected in another session. Sign in and reconnect from this browser.');
+            return;
+          }
+
           const connection = event.data.connection || {};
           const updatedProfile = profile ? {
             ...profile,
@@ -811,170 +831,89 @@ export default function App() {
           if (updatedProfile) {
             setProfile(updatedProfile);
             setUserRecord(previousRecord => previousRecord ? { ...previousRecord, ...connection, isStravaConnected: true } : previousRecord);
+            setReadiness(calculateReadinessFromStravaProfile(updatedProfile, calculateReadiness(plan)));
           }
 
           trackEvent('strava_connected', {
             requires_premium: false,
             recent_run_count: connection.stravaRecentRunCount || 0,
           });
-          setAppToast('Strava Free connected. Runs imported privately.');
+          setAppToast(
+            Number(connection.stravaRecentRunCount || 0) > 0
+              ? 'Strava Free connected. Runs imported privately.'
+              : 'No recent runs found. Track your next run in Strava, then sync.'
+          );
         }
       }
 
       if (event.data?.type === 'OAUTH_AUTH_ERROR' && event.data.provider === 'strava') {
+        const currentUser = auth.currentUser || user;
+        const callbackUid = typeof event.data.uid === 'string' ? event.data.uid : null;
+
+        if (callbackUid && currentUser && callbackUid !== currentUser.uid) {
+          return;
+        }
+
         setAppToast('Strava was not connected. Try again when you are ready.');
       }
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [profile, user]);
+  }, [plan, profile, user]);
 
-  const requestGoogleHealthAccess = async () => {
+  const handleSyncStrava = async () => {
     const currentUser = auth.currentUser || user;
+    const idToken = await currentUser?.getIdToken(true);
 
-    if (!currentUser) {
-      throw new Error('Sign in before connecting Health Metrics.');
+    if (!idToken) {
+      throw new Error('Sign in before syncing Strava.');
     }
 
-    if (isCordovaRuntime()) {
-      try {
-        const result = await reauthenticateWithCordovaGoogle(currentUser, GOOGLE_HEALTH_SCOPES);
-        const accessToken = result.accessToken;
+    const response = await fetch('/api/strava/sync', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    const data = await response.json().catch(() => ({}));
 
-        if (!accessToken) {
-          throw new Error('Google did not return a health access token. Try connecting again and approve the requested health permissions.');
-        }
-
-        setHealthTokens({ access_token: accessToken });
-        trackEvent('health_connected', {
-          provider: 'google',
-          runtime: 'cordova',
-        });
-
-        const now = new Date().toISOString();
-        if (profile) {
-          const updatedProfile = {
-            ...profile,
-            isHealthConnected: true,
-            healthProvider: 'google' as const,
-            updatedAt: now,
-          };
-
-          setProfile(updatedProfile);
-          await setDoc(doc(db, 'users', currentUser.uid), {
-            isHealthConnected: true,
-            healthProvider: 'google',
-            updatedAt: now,
-          }, { merge: true });
-        }
-
-        return accessToken;
-      } catch (error) {
-        console.error('Cordova Health Metrics authorization failed', error);
-        if (error instanceof Error) {
-          throw new Error(error.message);
-        }
-        throw new Error('Health Metrics authorization failed. Check your connection and try again.');
-      }
+    if (!response.ok) {
+      throw new Error(typeof data.error === 'string' ? data.error : 'Strava sync failed.');
     }
 
-    const provider = new GoogleAuthProvider();
-    GOOGLE_HEALTH_SCOPES.forEach((scope) => provider.addScope(scope));
-    provider.setCustomParameters({
-      prompt: 'consent select_account',
+    const stravaUpdate = buildStravaProfileUpdateFromSync(data);
+    const nextProfile = profile ? { ...profile, ...stravaUpdate } : profile;
+
+    setUserRecord(previousRecord => ({
+      ...previousRecord,
+      ...stravaUpdate,
+    }));
+
+    if (nextProfile) {
+      setProfile(nextProfile);
+      setReadiness(calculateReadinessFromStravaProfile(nextProfile, calculateReadiness(plan)));
+    }
+
+    trackEvent('strava_sync', {
+      recent_run_count: stravaUpdate.stravaRecentRunCount || 0,
+      recent_distance_km: stravaUpdate.stravaRecentDistanceKm || 0,
+      recent_load: stravaUpdate.stravaRecentLoad || 0,
+      refreshed: Boolean(data.refreshed),
     });
 
-    try {
-      const result = await reauthenticateWithPopup(currentUser, provider);
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      const accessToken = credential?.accessToken;
-
-      if (!accessToken) {
-        throw new Error('Google did not return a health access token. Try connecting again and approve the requested health permissions.');
-      }
-
-      setHealthTokens({ access_token: accessToken });
-      trackEvent('health_connected', {
-        provider: 'google',
-        runtime: 'web',
-      });
-
-      const now = new Date().toISOString();
-
-      if (profile) {
-        const updatedProfile = {
-          ...profile,
-          isHealthConnected: true,
-          healthProvider: 'google' as const,
-          updatedAt: now,
-        };
-
-        setProfile(updatedProfile);
-        await setDoc(doc(db, 'users', currentUser.uid), {
-          isHealthConnected: true,
-          healthProvider: 'google',
-          updatedAt: now,
-        }, { merge: true });
-      }
-
-      return accessToken;
-    } catch (error) {
-      console.error('Health Metrics authorization failed', error);
-
-      const code = getFirebaseAuthCode(error);
-      if (code === 'auth/popup-blocked') {
-        throw new Error('Allow pop-ups to connect Health Metrics.');
-      }
-
-      if (!code && error instanceof Error) {
-        throw new Error(error.message);
-      }
-
-      throw new Error(getGoogleAuthErrorMessage(error));
+    if ((stravaUpdate.stravaRecentRunCount || 0) === 0) {
+      setAppToast('No recent runs found. Track your next run in Strava, then sync.');
+    } else {
+      setAppToast('Strava runs synced. Readiness updated.');
     }
   };
 
-  const syncGoogleHealthWithToken = async (accessToken: string) => {
-    const currentUser = auth.currentUser || user;
-    const idToken = await currentUser?.getIdToken();
-    if (!idToken) {
-      throw new Error('Sign in before syncing Health Metrics.');
-    }
-
-    const response = await fetch('/api/health/sync', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${idToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ accessToken }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Health Metrics sync failed.');
-      }
-
-      const summary = normalizeHealthSyncResponse(data);
-      const updatedMetrics = buildHealthMetricCards(summary, healthMetrics, plan);
-
-      setHealthMetrics(updatedMetrics);
-      trackEvent('health_sync', {
-        provider: 'google',
-        metric_count: updatedMetrics.length,
-        persisted: Boolean(data.persisted),
-      });
-  };
-
-  const handleConnectGoogleHealth = async () => {
-    const accessToken = await requestGoogleHealthAccess();
-    await syncGoogleHealthWithToken(accessToken);
-  };
-
-  const handleSyncHealth = async () => {
-    const accessToken = healthTokens?.access_token || await requestGoogleHealthAccess();
-    await syncGoogleHealthWithToken(accessToken);
+  const handleOpenStrava = () => {
+    window.open('https://www.strava.com/dashboard', '_blank', 'noopener,noreferrer');
+    trackEvent('open_strava', {
+      source: screenRef.current,
+    });
   };
 
   const handleConnectStrava = async () => {
@@ -1024,51 +963,22 @@ export default function App() {
 
       if (docSnap.exists()) {
         const data = docSnap.data() as Partial<UserProfile>;
-        const unlocked = hasPremiumAccess(data);
-        const normalizedRecord = { ...data, isUnlocked: unlocked };
         const completedProfile = isCompleteUserProfile(data);
 
-        setUserRecord(normalizedRecord);
-        setIsUnlocked(unlocked);
+        setUserRecord(data);
         if (data.readinessScore) {
           setReadiness(data.readinessScore as ReadinessScore);
         }
 
         if (completedProfile) {
-          setProfile({ ...data, isUnlocked: unlocked });
-          if (unlocked) {
-            if (screenRef.current === 'auth' || screenRef.current === 'onboarding' || screenRef.current === 'subscription') {
-              setScreen('dashboard');
-            }
-          }
+          setProfile(data);
           return;
         }
 
         setProfile(null);
-        if (completedOnboardingUidRef.current === user.uid) {
-          if (screenRef.current !== 'subscription') {
-            setScreen('subscription');
-          }
-          return;
-        }
-
-        if (screenRef.current === 'auth' || screenRef.current === 'dashboard' || screenRef.current === 'profile') {
-          setScreen('onboarding');
-        }
       } else {
         setProfile(null);
         setUserRecord(null);
-        setIsUnlocked(false);
-        if (completedOnboardingUidRef.current === user.uid) {
-          if (screenRef.current !== 'subscription') {
-            setScreen('subscription');
-          }
-          return;
-        }
-        // New user, go to onboarding
-        if (screenRef.current === 'auth') {
-          setScreen('onboarding');
-        }
       }
     }, (error) => {
       setHasProfileLoaded(true);
@@ -1131,7 +1041,7 @@ export default function App() {
 
   useEffect(() => {
     if (!user || !profile || !hasProfileLoaded || !hasWorkoutsLoaded || isGeneratingPlan) return;
-    if (!hasPremiumAccess(accessRecord)) return;
+    if (!userAccess.unlocked) return;
     if (hasRenderableTrainingPlan(plan, currentDate)) return;
 
     const generatedPlan = generatePlanForProfile(profile);
@@ -1170,22 +1080,29 @@ export default function App() {
       console.error('Failed to persist recovered plan', error);
       setDatabaseError(getFirestoreUserMessage(error));
     });
-  }, [accessRecord, currentDate, hasProfileLoaded, hasWorkoutsLoaded, isGeneratingPlan, plan, profile, user]);
+  }, [currentDate, hasProfileLoaded, hasWorkoutsLoaded, isGeneratingPlan, plan, profile, user, userAccess.unlocked]);
 
   useEffect(() => {
-    if (!user || !profile || !hasProfileLoaded || !hasWorkoutsLoaded || isGeneratingPlan) return;
+    if (!user || !hasProfileLoaded || !hasWorkoutsLoaded || isGeneratingPlan || userAccess.isChecking) return;
 
-    if (canUseApp(accessRecord, plan, currentDate)) {
+    if (userAccess.unlocked) {
+      if (!profile) {
+        if (screenRef.current === 'auth' || screenRef.current === 'dashboard' || screenRef.current === 'subscription') {
+          setScreen('onboarding');
+        }
+        return;
+      }
+
       if (screenRef.current === 'auth' || screenRef.current === 'onboarding' || screenRef.current === 'subscription') {
         setScreen('dashboard');
       }
       return;
     }
 
-    if (screenRef.current !== 'subscription') {
+    if (shouldShowPaywall(userAccess) && screenRef.current !== 'subscription') {
       setScreen('subscription');
     }
-  }, [accessRecord, currentDate, hasProfileLoaded, hasWorkoutsLoaded, isGeneratingPlan, plan, profile, user]);
+  }, [hasProfileLoaded, hasWorkoutsLoaded, isGeneratingPlan, profile, user, userAccess]);
 
   useEffect(() => {
     if (!user || plan.length === 0) return;
@@ -1237,7 +1154,7 @@ export default function App() {
 
     const verifyCheckout = async () => {
       try {
-        const idToken = await user.getIdToken();
+        const idToken = await getFirebaseIdToken(user);
         const response = await fetch(`/api/checkout-session?sessionId=${encodeURIComponent(sessionId)}&userId=${encodeURIComponent(user.uid)}`, {
           headers: {
             'Authorization': `Bearer ${idToken}`,
@@ -1253,6 +1170,13 @@ export default function App() {
           throw new Error('Checkout was not completed.');
         }
 
+        const checkoutAccess = resolveUserAccess({
+          user,
+          idTokenPresent: true,
+          subscription: data,
+        });
+        setUserAccess(checkoutAccess);
+        mergeResolvedAccessState(checkoutAccess);
         const hasCompleteProfile = await applySubscriptionAccess(data);
         clearPendingCheckoutIntent();
         trackEvent('checkout_verified', {
@@ -1283,81 +1207,14 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [clearPendingCheckoutIntent, user, profile, userRecord, hasProfileLoaded]);
-
-  useEffect(() => {
-    if (!user || !hasProfileLoaded || !hasPriorSubscription(userRecord)) return;
-
-    const params = new URLSearchParams(window.location.search);
-    if (params.has('session_id')) return;
-    if (checkedSubscriptionRecoveryRef.current === user.uid) return;
-
-    checkedSubscriptionRecoveryRef.current = user.uid;
-    let cancelled = false;
-
-    const recoverExistingSubscription = async () => {
-      try {
-        const idToken = await user.getIdToken();
-        const response = await fetch(`/api/subscription-status?userId=${encodeURIComponent(user.uid)}`, {
-          headers: {
-            'Authorization': `Bearer ${idToken}`,
-          },
-        });
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Unable to verify subscription status.');
-        }
-
-        if (cancelled) return;
-
-        if (!data.unlocked) {
-          const now = new Date().toISOString();
-          const subscriptionUpdate = {
-            isUnlocked: false,
-            subscriptionStatus: data.subscriptionStatus ?? 'inactive',
-            subscriptionVerifiedAt: now,
-            updatedAt: now,
-          };
-
-          const updatedRecord = { ...userRecord, ...profile, ...subscriptionUpdate };
-          setIsUnlocked(false);
-          setUserRecord(updatedRecord);
-          if (profile) {
-            setProfile({ ...profile, ...subscriptionUpdate });
-          }
-
-          setScreen('subscription');
-          return;
-        }
-
-        const hasCompleteProfile = await applySubscriptionAccess(data);
-
-        if (cancelled) return;
-
-        if (hasCompleteProfile) {
-          setScreen('dashboard');
-        } else if (screenRef.current === 'auth' || screenRef.current === 'subscription') {
-          setScreen('onboarding');
-        }
-      } catch (error) {
-        console.error('Stripe subscription recovery failed', error);
-      }
-    };
-
-    recoverExistingSubscription();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [currentDate, hasProfileLoaded, plan, profile, subscriptionRefreshNonce, user, userRecord]);
+  }, [clearPendingCheckoutIntent, mergeResolvedAccessState, user, profile, userRecord, hasProfileLoaded]);
 
   const openHostedBillingPortal = () => {
     window.location.href = STRIPE_BILLING_PORTAL_URL;
   };
 
   const handleManageSubscription = async () => {
-    if (!user || !profile?.stripeCustomerId) {
+    if (!user || !accessRecord?.stripeCustomerId) {
       openHostedBillingPortal();
       return;
     }
@@ -1371,8 +1228,8 @@ export default function App() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          customerId: profile.stripeCustomerId,
-          subscriptionId: profile.stripeSubscriptionId,
+          customerId: accessRecord.stripeCustomerId,
+          subscriptionId: accessRecord.stripeSubscriptionId,
           userId: user.uid,
         }),
       });
@@ -1395,7 +1252,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!profile) return;
+    if (!user) return;
 
     const params = new URLSearchParams(window.location.search);
     if (params.get('billing') !== 'updated') return;
@@ -1407,15 +1264,16 @@ export default function App() {
       document.title,
       `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}${window.location.hash}`
     );
-    checkedSubscriptionRecoveryRef.current = null;
     setSubscriptionRefreshNonce((value) => value + 1);
     setScreen('profile');
-  }, [profile]);
+  }, [user]);
 
   const handleLogin = async () => {
     setAuthError(null);
 
     try {
+      await authPersistenceReady;
+
       if (isCordovaRuntime()) {
         await signInWithCordovaGoogle(auth);
         trackEvent('login', { method: 'google', runtime: 'cordova' });
@@ -1450,17 +1308,17 @@ export default function App() {
       return;
     }
 
-    if (!hasProfileLoaded) {
+    if (!hasProfileLoaded || userAccess.isChecking) {
+      return;
+    }
+
+    if (!userAccess.unlocked) {
+      setScreen('subscription');
       return;
     }
 
     if (!isCompleteUserProfile(accessRecord)) {
       setScreen('onboarding');
-      return;
-    }
-
-    if (!hasPremiumAccess(accessRecord)) {
-      setScreen('subscription');
       return;
     }
 
@@ -1472,8 +1330,8 @@ export default function App() {
       await signOut(auth);
       trackEvent('logout');
       completedOnboardingUidRef.current = null;
-      checkedSubscriptionRecoveryRef.current = null;
       processedStripeSessionRef.current = null;
+      setUserAccess(createLoggedOutUserAccess());
       setProfile(null);
       setPlan([]);
       setHasWorkoutsLoaded(false);
@@ -1486,7 +1344,9 @@ export default function App() {
   const handleOnboardingComplete = async (newProfile: UserProfile) => {
     if (!user) return;
 
-    if (hasPriorSubscription(accessRecord) && !hasPremiumAccess(accessRecord)) {
+    if (userAccess.isChecking) return;
+
+    if (!userAccess.unlocked) {
       setScreen('subscription');
       return;
     }
@@ -1543,7 +1403,7 @@ export default function App() {
       });
       await batch.commit();
 
-      const accessAfterSave = isUnlocked || hasPremiumAccess(userRecord);
+      const accessAfterSave = userAccess.unlocked;
       trackEvent('plan_generated', {
         source: 'onboarding',
         goal_type: newProfile.goalType,
@@ -1559,7 +1419,6 @@ export default function App() {
 
       setProfile(savedProfile);
       setUserRecord(savedProfile);
-      setIsUnlocked(accessAfterSave);
       setPlan(mergeWorkoutPlans(preservedWorkouts, newPlan));
       setDatabaseError(null);
       setIsGeneratingPlan(false);
@@ -1698,7 +1557,7 @@ export default function App() {
   const handleRegeneratePlan = async () => {
     if (!user || !profile) return;
 
-    if (!hasPremiumAccess(accessRecord)) {
+    if (!userAccess.unlocked) {
       setScreen('subscription');
       return;
     }
@@ -1785,7 +1644,7 @@ export default function App() {
       <MarathonReadyingPulse event={readyingEvent} onComplete={clearReadyingEvent} />
       <Suspense fallback={<ScreenLoader />}>
       <AnimatePresence mode="wait">
-        {!isAuthReady ? (
+        {!isAuthReady || (userAccess.isAuthenticated && userAccess.isChecking) ? (
           <motion.div key="loading" {...SCREEN_MOTION}>
             <ScreenLoader />
           </motion.div>
@@ -1848,7 +1707,7 @@ export default function App() {
               onBack={() => setScreen('dashboard')}
               onSelectWorkout={handleSelectWorkout}
               onSetNewGoal={() => {
-                if (!hasPremiumAccess(accessRecord)) {
+                if (!userAccess.unlocked) {
                   setScreen('subscription');
                   return;
                 }
@@ -1860,11 +1719,11 @@ export default function App() {
         ) : screen === 'subscription' ? (
           <motion.div key="subscription" {...SCREEN_MOTION}>
             <Subscription 
-              onBack={() => setScreen(profile && isUnlocked ? 'dashboard' : 'onboarding')} 
-              isUnlocked={isUnlocked} 
+              onBack={() => setScreen(profile && userAccess.unlocked ? 'dashboard' : 'onboarding')} 
+              isUnlocked={userAccess.unlocked} 
               userId={user?.uid}
               userEmail={user?.email || profile?.email}
-              hasBillingCustomer={Boolean(profile?.stripeCustomerId)}
+              hasBillingCustomer={Boolean(accessRecord?.stripeCustomerId)}
               onManageSubscription={handleManageSubscription}
               onRestoreAccess={restoreSubscriptionAccess}
               isRestoringAccess={isRestoringSubscriptionAccess}
@@ -1901,11 +1760,11 @@ export default function App() {
         ) : screen === 'health' && profile ? (
           <motion.div key="health" {...SCREEN_MOTION}>
             <HealthMetricsView 
-              metrics={healthMetrics} 
               profile={profile}
               onBack={() => setScreen('dashboard')} 
-              onConnectGoogleHealth={handleConnectGoogleHealth}
-              onSync={handleSyncHealth}
+              onConnectStrava={handleConnectStrava}
+              onSyncStrava={handleSyncStrava}
+              onOpenStrava={handleOpenStrava}
             />
           </motion.div>
         ) : null}

@@ -29,13 +29,13 @@ const assumptions = [
 
 const suggestedScenarios = [
   {
-    title: 'Founder Monthly',
+    title: 'Private Monthly',
     planId: 'monthly',
     note: 'Best for users testing Jogga before a race block.',
     users: 100,
   },
   {
-    title: 'Founder Yearly',
+    title: 'Private Yearly',
     planId: 'yearly',
     note: 'Best value and strongest retention signal.',
     users: 100,
@@ -77,9 +77,9 @@ export default function ExpensesDashboard({ onBack }: ExpensesDashboardProps) {
             </div>
             <div>
               <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Suggested pricing</div>
-              <h2 className="mt-2 text-2xl font-light tracking-tight">Keep founder pricing simple.</h2>
+              <h2 className="mt-2 text-2xl font-light tracking-tight">Keep Strava-offset pricing simple.</h2>
               <p className="mt-3 text-sm leading-relaxed text-zinc-400">
-                Current pricing stays attractive while daily AI caps, deterministic planning, and tester whitelisting protect margins.
+                $6 monthly and $49 yearly stay below Strava+Runna while daily AI caps, deterministic planning, and tester whitelisting protect margins.
               </p>
             </div>
           </div>
@@ -100,7 +100,7 @@ export default function ExpensesDashboard({ onBack }: ExpensesDashboardProps) {
                       <span className="text-4xl font-light tracking-tight">{plan.price}</span>
                       <span className="pb-1 text-xs text-zinc-500">{plan.period}</span>
                     </div>
-                    <div className="mt-1 text-xs text-zinc-600 line-through">Normally {plan.compareAtPrice}</div>
+                    <div className="mt-1 text-xs text-zinc-600">Strava+Runna {plan.compareAtPrice}</div>
                   </div>
                   <span className="rounded-full border border-green-400/20 bg-green-400/10 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-green-200">
                     Suggested

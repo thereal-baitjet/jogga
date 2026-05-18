@@ -158,7 +158,10 @@ export async function syncStravaActivitiesForUser(userId: string, accessToken?: 
 
   const response = await axios.get(`${STRAVA_API_URL}/athlete/activities`, {
     headers: { Authorization: `Bearer ${token}` },
-    params: { per_page: 30 },
+    params: {
+      after: Math.floor((Date.now() - 28 * 24 * 60 * 60 * 1000) / 1000),
+      per_page: 100,
+    },
   });
 
   const activities = Array.isArray(response.data)
@@ -189,6 +192,8 @@ export async function syncStravaActivitiesForUser(userId: string, accessToken?: 
 
   return {
     activitiesImported: activities.length,
+    runsImported: summary.recentRunCount,
+    noRecentRuns: summary.recentRunCount === 0,
     summary,
     refreshed: Object.keys(tokenUpdate).length > 0,
   };
@@ -245,11 +250,15 @@ export async function handleStravaAuthUrl(req: any, res: any) {
     });
     enforceSameOrigin(req);
 
+    const user = await verifyFirebaseUser(req);
+
     if (!STRAVA_CLIENT_ID || !STRAVA_CLIENT_SECRET) {
-      return sendJson(res, 500, { error: "Strava OAuth is not configured" });
+      return sendJson(res, 503, {
+        error: "Strava connection unavailable",
+        code: "STRAVA_OAUTH_NOT_CONFIGURED",
+      });
     }
 
-    const user = await verifyFirebaseUser(req);
     const redirectUri = `${APP_URL}/auth/strava/callback`;
     const params = new URLSearchParams({
       client_id: STRAVA_CLIENT_ID,
@@ -278,19 +287,31 @@ export async function handleStravaAuthCallback(req: any, res: any) {
     return res.end("Method not allowed");
   }
 
+  const code = Array.isArray(req.query.code) ? req.query.code[0] : req.query.code;
+  const state = Array.isArray(req.query.state) ? req.query.state[0] : req.query.state;
+  const callbackScope = Array.isArray(req.query.scope) ? req.query.scope[0] : req.query.scope;
   const error = Array.isArray(req.query.error) ? req.query.error[0] : req.query.error;
+  let stateUid: string | null = null;
+
   if (error) {
+    try {
+      stateUid = verifySignedStravaState(state).uid;
+    } catch {
+      stateUid = null;
+    }
+
     return renderOAuthResult(
       res,
-      { type: "OAUTH_AUTH_ERROR", provider: "strava", error },
+      {
+        type: "OAUTH_AUTH_ERROR",
+        provider: "strava",
+        error,
+        ...(stateUid ? { uid: stateUid } : {}),
+      },
       "Strava Not Connected",
       "Jogga did not receive permission to import your runs."
     );
   }
-
-  const code = Array.isArray(req.query.code) ? req.query.code[0] : req.query.code;
-  const state = Array.isArray(req.query.state) ? req.query.state[0] : req.query.state;
-  const callbackScope = Array.isArray(req.query.scope) ? req.query.scope[0] : req.query.scope;
 
   if (!code) {
     res.statusCode = 400;
@@ -304,6 +325,7 @@ export async function handleStravaAuthCallback(req: any, res: any) {
 
   try {
     const statePayload = verifySignedStravaState(state);
+    stateUid = statePayload.uid;
     const response = await axios.post(
       STRAVA_TOKEN_URL,
       new URLSearchParams({
@@ -336,6 +358,7 @@ export async function handleStravaAuthCallback(req: any, res: any) {
           type: "OAUTH_AUTH_ERROR",
           provider: "strava",
           error: "missing_scope",
+          uid: statePayload.uid,
           scopes,
           requiredScopes: [...STRAVA_SCOPES],
         },
@@ -388,6 +411,7 @@ export async function handleStravaAuthCallback(req: any, res: any) {
       {
         type: "OAUTH_AUTH_SUCCESS",
         provider: "strava",
+        uid: statePayload.uid,
         connection,
         sync: syncResult,
       },
@@ -402,6 +426,7 @@ export async function handleStravaAuthCallback(req: any, res: any) {
         type: "OAUTH_AUTH_ERROR",
         provider: "strava",
         error: error.message || "Strava authentication failed",
+        ...(stateUid ? { uid: stateUid } : {}),
       },
       "Strava Connection Failed",
       "Close this window and try again from Jogga."
@@ -431,7 +456,11 @@ export async function handleStravaSync(req: any, res: any) {
     if (axios.isAxiosError(error)) {
       const status = error.response?.status || 500;
       if (status === 401) {
-        return sendJson(res, 401, { error: "Strava authorization expired. Reconnect Strava Free." });
+        return sendJson(res, 401, {
+          error: "Reconnect Strava",
+          code: "STRAVA_RECONNECT_REQUIRED",
+          detail: "Strava authorization expired. Reconnect Strava Free.",
+        });
       }
       return sendJson(res, status, { error: error.response?.data?.message || error.message || "Strava sync failed" });
     }

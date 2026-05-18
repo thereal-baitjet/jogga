@@ -26,11 +26,15 @@ export default async function handler(req: any, res: any) {
     });
     enforceSameOrigin(req);
 
+    const user = await verifyFirebaseUser(req);
+
     if (!STRAVA_CLIENT_ID || !STRAVA_CLIENT_SECRET) {
-      return sendJson(res, 500, { error: "Strava OAuth is not configured" });
+      return sendJson(res, 503, {
+        error: "Strava connection unavailable",
+        code: "STRAVA_OAUTH_NOT_CONFIGURED",
+      });
     }
 
-    const user = await verifyFirebaseUser(req);
     const redirectUri = `${APP_URL}/auth/strava/callback`;
     const params = new URLSearchParams({
       client_id: STRAVA_CLIENT_ID,

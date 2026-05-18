@@ -1,6 +1,8 @@
 import Stripe from "stripe";
 import {
   enforceIpRateLimit,
+  findUserSubscriptionForAccess,
+  getAccessSourceForSubscriptionStatus,
   getStripe,
   getStripeId,
   isAccessSubscriptionStatus,
@@ -8,27 +10,6 @@ import {
   sendJson,
   verifyFirebaseUserMatches,
 } from "./_utils.js";
-
-function escapeStripeSearchValue(value: string) {
-  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
-
-async function findUserSubscription(stripe: Stripe, userId: string) {
-  const escapedUserId = escapeStripeSearchValue(userId);
-
-  for (const status of ["trialing", "active"]) {
-    const subscriptions = await stripe.subscriptions.search({
-      query: `metadata['userId']:'${escapedUserId}' AND status:'${status}'`,
-      limit: 1,
-    });
-
-    if (subscriptions.data[0]) {
-      return subscriptions.data[0];
-    }
-  }
-
-  return null;
-}
 
 export default async function handler(req: any, res: any) {
   if (req.method !== "GET") {
@@ -55,11 +36,12 @@ export default async function handler(req: any, res: any) {
   try {
     const user = await verifyFirebaseUserMatches(req, userId);
     const stripe = getStripe();
-    const subscription = await findUserSubscription(stripe, user.uid);
+    const { subscription } = await findUserSubscriptionForAccess(stripe, user);
     const subscriptionStatus = subscription?.cancel_at_period_end
       ? "canceling"
       : subscription?.status || null;
     const unlocked = isAccessSubscriptionStatus(subscriptionStatus);
+    const accessSource = unlocked ? getAccessSourceForSubscriptionStatus(subscriptionStatus) : "none";
     let serverFulfilled = false;
 
     if (subscription) {
@@ -81,6 +63,7 @@ export default async function handler(req: any, res: any) {
 
     return sendJson(res, 200, {
       unlocked,
+      accessSource,
       serverFulfilled,
       customerId: getStripeId(subscription?.customer as Stripe.Customer | string | null | undefined),
       subscriptionId: subscription?.id || null,
@@ -88,6 +71,7 @@ export default async function handler(req: any, res: any) {
       cancelAtPeriodEnd: subscription?.cancel_at_period_end || false,
       priceId: subscription?.items.data[0]?.price?.id || null,
       planId: subscription?.metadata?.planId || null,
+      reason: unlocked ? accessSource : subscription ? `subscription_${subscriptionStatus || "inactive"}` : "no_active_subscription",
     });
   } catch (error) {
     return sendError(res, error);

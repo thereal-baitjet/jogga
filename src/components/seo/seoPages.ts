@@ -1,6 +1,6 @@
 export const SITE_URL = 'https://jogga.santosautomation.com';
 export const DEFAULT_META_TITLE = 'Jogga — Adaptive AI Running Coach';
-export const DEFAULT_META_DESCRIPTION = 'Affordable AI running coach with adaptive plans that adjust to missed runs, busy weeks, GPS workouts, and recovery. Start with a 3-day free trial.';
+export const DEFAULT_META_DESCRIPTION = 'Private AI running coach for Strava Free users. Import runs read-only, calculate readiness, and get adaptive coaching without feeds or leaderboards.';
 
 export interface SeoPageContent {
   path: string;
@@ -22,12 +22,12 @@ export const SEO_PAGES: SeoPageContent[] = [
     path: '/ai-running-coach',
     title: 'AI Running Coach That Adapts to Your Life | Jogga',
     description:
-      'Jogga is an affordable AI running coach that adjusts training after missed runs, busy weeks, low energy, GPS workouts, and recovery signals.',
-    h1: 'AI Running Coach That Adapts to Your Life',
-    eyebrow: 'Adaptive AI running coach',
+      'Jogga is a private AI running coach for Strava Free users, with read-only run import, readiness, training load, and adaptive coaching.',
+    h1: 'Private AI Running Coach for Strava Free Users',
+    eyebrow: 'Anti-Strava AI running coach',
     intro:
-      'Jogga turns your goal, schedule, run history, and recovery signals into a flexible plan that keeps moving when real life interrupts training.',
-    cta: 'Start Your Adaptive Running Plan',
+      'Jogga turns your Strava runs, schedule, and recovery context into private coaching that keeps moving when real life interrupts training.',
+    cta: 'Start Private Coaching',
     primaryKeyword: 'AI running coach',
     sections: [
       {
@@ -38,12 +38,12 @@ export const SEO_PAGES: SeoPageContent[] = [
       {
         heading: 'How Jogga adapts your training',
         body:
-          'If your schedule changes, you miss a run, or your energy is low, Jogga adjusts the next steps so one imperfect week does not erase your momentum.',
+          'If your schedule changes, you miss a run, or your energy is low, Jogga adjusts the next steps using your recent Strava activity so one imperfect week does not erase your momentum.',
       },
       {
-        heading: 'GPS and readiness tracking',
+        heading: 'Strava and readiness tracking',
         body:
-          'Runs are measured with GPS so coaching can reflect distance, pace, duration, and completed effort. Readiness signals help shape when to push and when to recover.',
+          'Runs are tracked in Strava and imported read-only so coaching can reflect distance, duration, elevation, and completed effort. Readiness signals help shape when to push and when to recover.',
       },
       {
         heading: 'Personalized plans',
@@ -61,7 +61,7 @@ export const SEO_PAGES: SeoPageContent[] = [
     path: '/5k-training-plan',
     title: 'Adaptive 5K Training Plan for Beginners | Jogga',
     description:
-      'Start your first 5K with an affordable training plan that adapts when life gets busy, runs are missed, or your energy changes.',
+      'Start your first 5K with a private Strava-powered training plan that adapts when life gets busy, runs are missed, or your energy changes.',
     h1: '5K Training Plan for Beginners',
     eyebrow: '5K training',
     intro:
@@ -87,7 +87,7 @@ export const SEO_PAGES: SeoPageContent[] = [
       {
         heading: 'Recovery and pacing',
         body:
-          'Recovery days are part of training. Jogga uses them to reduce injury risk and make your next quality run more productive.',
+          'Recovery days are part of training. Jogga uses your recent Strava load to reduce injury risk and make your next quality run more productive.',
       },
       {
         heading: 'Why adaptive plans matter',
@@ -100,7 +100,7 @@ export const SEO_PAGES: SeoPageContent[] = [
     path: '/10k-training-plan',
     title: 'Adaptive 10K Training Plan | Affordable AI Coach | Jogga',
     description:
-      'Build endurance with Jogga, an affordable AI running coach that adapts your 10K plan around missed runs, pacing, recovery, and busy weeks.',
+      'Build endurance with Jogga, a private AI running coach that adapts your 10K plan around Strava runs, missed workouts, recovery, and busy weeks.',
     h1: 'Adaptive 10K Training Plan',
     eyebrow: '10K training',
     intro:
@@ -131,7 +131,7 @@ export const SEO_PAGES: SeoPageContent[] = [
       {
         heading: 'Adaptive coaching benefits',
         body:
-          'When your week changes, Jogga adjusts the training path so your next workout still fits your body, schedule, budget, and goal.',
+          'When your week changes, Jogga adjusts the training path so your next workout still fits your body, schedule, budget, Strava history, and goal.',
       },
     ],
   },
@@ -139,7 +139,7 @@ export const SEO_PAGES: SeoPageContent[] = [
     path: '/marathon-training-plan',
     title: 'Adaptive Marathon Training Plan | AI Running Coach | Jogga',
     description:
-      'Prepare for a marathon with an adaptive AI running coach that adjusts long runs, recovery, pacing, and missed workouts around real life.',
+      'Prepare for a marathon with a private AI running coach that imports Strava runs and adjusts long runs, recovery, pacing, and missed workouts around real life.',
     h1: 'AI Marathon Training Plan',
     eyebrow: 'Marathon training',
     intro:
@@ -170,7 +170,7 @@ export const SEO_PAGES: SeoPageContent[] = [
       {
         heading: 'Race readiness',
         body:
-          'Race readiness comes from consistent preparation, realistic pacing, and knowing when to adjust. Jogga keeps those signals visible as your marathon approaches without requiring expensive one-on-one coaching.',
+          'Race readiness comes from consistent preparation, realistic pacing, and knowing when to adjust. Jogga keeps those signals private and visible as your marathon approaches without requiring the Strava+Runna bundle.',
       },
     ],
   },
@@ -178,7 +178,7 @@ export const SEO_PAGES: SeoPageContent[] = [
     path: '/beginner-running-plan',
     title: 'Beginner Running Plan That Adapts to Real Life | Jogga',
     description:
-      'Start running with an affordable beginner plan that adapts to missed days, low energy, recovery, and real-life schedules.',
+      'Start running with a private beginner plan that adapts to Strava runs, missed days, low energy, recovery, and real-life schedules.',
     h1: 'Beginner Running Plan',
     eyebrow: 'Beginner running',
     intro:
@@ -217,7 +217,7 @@ export const SEO_PAGES: SeoPageContent[] = [
     path: '/half-marathon-plan',
     title: 'Adaptive Half Marathon Training Plan | Jogga',
     description:
-      'Train for a half marathon with adaptive pacing, long-run progression, recovery guidance, and affordable AI coaching that fits real life.',
+      'Train for a half marathon with Strava-powered pacing, long-run progression, recovery guidance, and private AI coaching that fits real life.',
     h1: 'Half Marathon Training Plan',
     eyebrow: 'Half marathon training',
     intro:

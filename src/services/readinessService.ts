@@ -28,6 +28,18 @@ export const calculateReadiness = (plan: Workout[]): ReadinessScore => {
   const today = todayDate(now);
   const completed = plan.filter(w => w.status === 'completed');
 
+  if (completed.length === 0) {
+    return {
+      score: 0,
+      consistency: 0,
+      fatigue: 0,
+      progress: 0,
+      streak: 0,
+      trend: 0,
+      updatedAt: now.toISOString()
+    };
+  }
+
   // 1. Consistency (Last 14 days)
   const fourteenDaysAgo = subDays(today, 14);
   const plannedLast14 = plan.filter(w => {
@@ -35,9 +47,15 @@ export const calculateReadiness = (plan: Workout[]): ReadinessScore => {
     return isAfter(d, fourteenDaysAgo) && isBefore(d, today);
   });
   const completedLast14 = plannedLast14.filter(w => w.status === 'completed');
+  const recentCompletions = completed.filter(w => {
+    const d = parseLocalDate(w.date);
+    return isAfter(d, fourteenDaysAgo) && !isAfter(d, today);
+  });
   const consistency = plannedLast14.length > 0 
     ? Math.round((completedLast14.length / plannedLast14.length) * 100)
-    : 91; // Default as requested
+    : recentCompletions.length > 0
+      ? Math.min(100, 60 + (recentCompletions.length * 10))
+      : 0;
 
   // 2. Fatigue (ATL/CTL Model)
   const sevenDaysAgo = subDays(today, 7);
@@ -52,8 +70,12 @@ export const calculateReadiness = (plan: Workout[]): ReadinessScore => {
   // Fatigue score (0-100)
   // If ATL is much higher than CTL, fatigue is high.
   // Ratio of 1.5+ is high fatigue.
-  const ratio = ctl > 0 ? atl / ctl : 1;
-  const fatigue = Math.min(100, Math.round((ratio / 1.5) * 100));
+  const ratio = ctl > 0 ? atl / ctl : 0;
+  const fatigue = chronicWorkouts.length >= 3
+    ? Math.min(100, Math.round((ratio / 1.5) * 100))
+    : acuteWorkouts.length > 0
+      ? 45
+      : 0;
 
   // 3. Streak
   let streak = 0;
@@ -83,13 +105,20 @@ export const calculateReadiness = (plan: Workout[]): ReadinessScore => {
   const score = Math.min(100, Math.max(0, Math.round(consistency * 0.8 + (50 - fatigueImpact) * 0.4)));
 
   // 5. Trend
-  const trend = 4; // Default as requested
+  const previousSevenDaysAgo = subDays(sevenDaysAgo, 7);
+  const previousWeekCompleted = completed.filter(w => {
+    const date = parseLocalDate(w.date);
+    return isAfter(date, previousSevenDaysAgo) && isBefore(date, sevenDaysAgo);
+  });
+  const trend = completed.length > 1
+    ? Math.max(-20, Math.min(20, (acuteWorkouts.length - previousWeekCompleted.length) * 4))
+    : 0;
 
   return {
-    score: Number.isFinite(score) ? score : 84,
+    score: Number.isFinite(score) ? score : 0,
     consistency,
-    fatigue: Number.isFinite(fatigue) ? fatigue : 45,
-    progress: Math.round(consistency * 0.7), // Mock progress for now
+    fatigue: Number.isFinite(fatigue) ? fatigue : 0,
+    progress: Math.round(consistency * 0.7),
     streak,
     trend,
     updatedAt: now.toISOString()

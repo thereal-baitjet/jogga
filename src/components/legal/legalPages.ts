@@ -20,7 +20,7 @@ export const LEGAL_PAGES: LegalPageContent[] = [
     path: '/privacy',
     title: 'Privacy Policy | Jogga',
     description:
-      'Privacy policy for Jogga, including how the app handles account data, training plans, GPS workouts, health metrics, payments, analytics, and bot protection.',
+      'Privacy policy for Jogga, including how the app handles account data, training plans, Strava activity imports, health metrics, payments, analytics, and bot protection.',
     h1: 'Privacy Policy',
     updatedAt: 'May 10, 2026',
     updatedIso: '2026-05-10',
@@ -28,7 +28,7 @@ export const LEGAL_PAGES: LegalPageContent[] = [
       {
         heading: 'Overview',
         body: [
-          'Jogga is an AI running coach that helps users create adaptive training plans, track workouts, review GPS-based run feedback, and understand fitness trends. This policy explains what information Jogga collects, how it is used, and the choices available to users.',
+          'Jogga is an AI running coach that helps users create adaptive training plans, import Strava runs, review private run feedback, and understand fitness trends. This policy explains what information Jogga collects, how it is used, and the choices available to users.',
           'Jogga is designed for fitness and wellness support. It is not a medical device and does not provide diagnosis, treatment, or medical advice.',
         ],
       },
@@ -38,8 +38,8 @@ export const LEGAL_PAGES: LegalPageContent[] = [
           'Account information: email address, display name, profile photo, authentication provider, and Firebase user ID when you sign in with Google.',
           'Training profile information: name, experience level, race or fitness goal, goal date, preferred training days, and current weekly mileage.',
           'Workout information: planned workouts, completed workouts, distance, duration, pace, perceived effort, notes, readiness scores, streaks, and plan adjustments.',
-          'Location and GPS workout data: if you start a tracked run, Jogga may collect route points, GPS accuracy, distance, pace, duration, timestamps, and related run metrics to display the run and update coaching feedback.',
-          'Health metrics: if you connect Google Fit or another supported source, Jogga requests read-only access and stores summarized daily metrics where possible, such as steps, distance, active calories, heart rate summaries, sleep summaries, weight, and recovery-related scores. Jogga does not store raw Google OAuth tokens in Firestore.',
+          'Strava activity data: if you connect Strava, Jogga requests read-only access to import running activities and summarized metrics such as distance, duration, elevation gain, recent load, activity timestamps, and latest-run context. Jogga does not request Strava write/post scopes.',
+          'Manual fallback workout data: if you use manual Jogga run mode, the app may calculate distance, pace, duration, accuracy summaries, timestamps, and related run metrics. Strava remains the primary running data source.',
           'Payment information: Stripe handles checkout, subscriptions, payment methods, invoices, cancellations, and billing portal access. Jogga stores subscription identifiers and status, but does not store full card numbers.',
           'Usage, analytics, and device information: Jogga may collect page views, feature events, app errors, browser or device information, and approximate technical data needed to operate, secure, and improve the app.',
           'Bot protection signals: when enabled, Cloudflare Turnstile may process browser and interaction signals to help distinguish legitimate users from automated traffic before sign-in or form actions.',
@@ -50,8 +50,8 @@ export const LEGAL_PAGES: LegalPageContent[] = [
         body: [
           'To create, save, and update personalized training plans.',
           'To calculate readiness, recovery, streaks, workout feedback, and plan changes.',
-          'To measure real runs using GPS metrics and show route or performance summaries.',
-          'To generate AI coaching summaries, post-run feedback, audio cues, and explanations. Jogga sends only the information needed for the coaching task where possible and avoids sending raw GPS route arrays to AI providers unless necessary.',
+          'To import Strava runs read-only and calculate readiness, volume, consistency, elevation, duration, and training load.',
+          'To generate AI coaching summaries, post-run feedback, audio cues, and explanations. Jogga sends only the information needed for the coaching task where possible and does not send raw GPS route arrays to AI providers.',
           'To process subscriptions, verify paid access, restore access, prevent canceled subscriptions from retaining premium features, and provide billing support through Stripe.',
           'To protect the app from abuse, spam, credential attacks, excessive AI usage, and automated signups.',
           'To debug, maintain, secure, and improve Jogga.',
@@ -67,7 +67,7 @@ export const LEGAL_PAGES: LegalPageContent[] = [
       {
         heading: 'Third-Party Services',
         body: [
-          'Jogga uses service providers to operate the app, including Firebase for authentication and database services, Vercel for hosting and serverless functions, Stripe for payments and subscriptions, Google services for authentication, health data sync, analytics, maps, or AI features, Cloudflare Turnstile for bot detection when configured, and AI providers for coaching features.',
+          'Jogga uses service providers to operate the app, including Firebase for authentication and database services, Vercel for hosting and serverless functions, Stripe for payments and subscriptions, Strava for read-only activity import, Google services for authentication, analytics, or AI features, Cloudflare Turnstile for bot detection when configured, and AI providers for coaching features.',
           'These providers process information according to their own terms and privacy practices. Jogga uses them to provide the app, secure the service, process payments, measure usage, and generate app features.',
         ],
       },
@@ -82,9 +82,9 @@ export const LEGAL_PAGES: LegalPageContent[] = [
       {
         heading: 'Health, Fitness, and Location Data',
         body: [
-          'Jogga treats fitness, health metric, and precise location information as sensitive. Users choose when to start GPS tracking or connect supported health data sources.',
-          'Google Fit and health metric sync is read-only in the current MVP. Jogga asks for access only after the user taps a connect action and stores summarized daily metrics where possible.',
-          'You can disconnect third-party access through the relevant Google, Firebase, browser, or device settings. Some historical app records may remain until deleted according to the retention practices below.',
+          'Jogga treats fitness, health metric, and activity information as sensitive. Users choose when to connect Strava or use manual run fallback mode.',
+          'Strava sync is read-only. Jogga asks for access only after the user taps a connect action and stores summarized activity metrics where possible.',
+          'You can disconnect third-party access through the relevant Strava, Firebase, browser, or device settings. Some historical app records may remain until deleted according to the retention practices below.',
         ],
       },
       {
@@ -110,8 +110,8 @@ export const LEGAL_PAGES: LegalPageContent[] = [
       {
         heading: 'Your Choices',
         body: [
-          'You can choose not to connect health metrics, not to start GPS-tracked workouts, or not to provide optional workout notes.',
-          'You can manage billing through Stripe, revoke Google account access through Google settings, disable browser permissions such as location access, and contact Jogga to request account data deletion.',
+          'You can choose not to connect Strava, not to use manual workout mode, or not to provide optional workout notes.',
+          'You can manage billing through Stripe, revoke Strava access through Strava settings, revoke Google account access through Google settings, disable browser permissions such as location access, and contact Jogga to request account data deletion.',
         ],
       },
       {
@@ -132,7 +132,7 @@ export const LEGAL_PAGES: LegalPageContent[] = [
     path: '/terms',
     title: 'Terms of Service | Jogga',
     description:
-      'Terms of service for Jogga, including subscriptions, AI coaching, GPS tracking, health metrics, acceptable use, and fitness disclaimers.',
+      'Terms of service for Jogga, including subscriptions, AI coaching, Strava activity import, health metrics, acceptable use, and fitness disclaimers.',
     h1: 'Terms of Service',
     updatedAt: 'May 10, 2026',
     updatedIso: '2026-05-10',
@@ -147,7 +147,7 @@ export const LEGAL_PAGES: LegalPageContent[] = [
       {
         heading: 'Jogga Is Not Medical Advice',
         body: [
-          'Jogga provides fitness and wellness information, training plan organization, run tracking, readiness cues, and AI-generated coaching summaries. Jogga does not provide medical advice, diagnosis, treatment, emergency support, or professional healthcare services.',
+          'Jogga provides fitness and wellness information, training plan organization, Strava activity import, readiness cues, and AI-generated coaching summaries. Jogga does not provide medical advice, diagnosis, treatment, emergency support, or professional healthcare services.',
           'Running and exercise involve risk. Consult a qualified healthcare professional before starting or changing training if you have health concerns, injuries, symptoms, medical conditions, or any doubt about safe participation.',
         ],
       },

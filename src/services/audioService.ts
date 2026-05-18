@@ -2,6 +2,20 @@ import { auth } from '../firebase';
 
 let audioQueue: string[] = [];
 let isPlaying = false;
+let audioContext: AudioContext | null = null;
+
+function getAudioContext() {
+  if (typeof window === 'undefined') return null;
+
+  const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AudioContextClass) return null;
+
+  if (!audioContext || audioContext.state === 'closed') {
+    audioContext = new AudioContextClass({ sampleRate: 24000 });
+  }
+
+  return audioContext;
+}
 
 export async function playAudioCue(text: string, voice: 'Puck' | 'Charon' | 'Kore' | 'Fenrir' | 'Zephyr' = 'Kore') {
   audioQueue.push(text);
@@ -57,7 +71,11 @@ async function processQueue(voice: string) {
         float32Data[i] = int16Data[i] / 32768.0;
       }
 
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+      const audioContext = getAudioContext();
+      if (!audioContext) {
+        playSpeechSynthesisFallback(text, () => processQueue(voice));
+        return;
+      }
       
       if (audioContext.state === 'suspended') {
         await audioContext.resume();

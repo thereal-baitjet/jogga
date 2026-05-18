@@ -2,6 +2,7 @@ import Stripe from "stripe";
 import {
   checkoutSessionAllowsAccess,
   enforceIpRateLimit,
+  getAccessSourceForSubscriptionStatus,
   getStripe,
   getStripeId,
   getSubscriptionStatus,
@@ -47,6 +48,7 @@ export default async function handler(req: any, res: any) {
 
     const subscriptionStatus = getSubscriptionStatus(session.subscription as Stripe.Subscription | null);
     const unlocked = checkoutSessionAllowsAccess(session, subscriptionStatus);
+    const accessSource = unlocked ? getAccessSourceForSubscriptionStatus(subscriptionStatus) : "none";
     let serverFulfilled = false;
 
     if (unlocked) {
@@ -65,6 +67,7 @@ export default async function handler(req: any, res: any) {
 
     return sendJson(res, 200, {
       unlocked,
+      accessSource,
       serverFulfilled,
       status: session.status,
       paymentStatus: session.payment_status,
@@ -73,6 +76,7 @@ export default async function handler(req: any, res: any) {
       subscriptionStatus,
       priceId: lineItems.data[0]?.price?.id || null,
       planId: session.metadata?.planId || null,
+      reason: unlocked ? accessSource : "checkout_incomplete",
     });
   } catch (error) {
     return sendError(res, error);

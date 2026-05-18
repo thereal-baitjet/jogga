@@ -63,11 +63,11 @@ function buildFeedbackSummary(workout: Workout, input: FeedbackRewardInput, note
   }
 
   if (effortDelta >= 2) {
-    return `You logged this ${workout.type.toLowerCase()} as harder than planned at effort ${input.effort}/10.`;
+    return `${sourceLabel} this ${workout.type.toLowerCase()} as harder than planned at effort ${input.effort}/10.`;
   }
 
   if (effortDelta <= -2) {
-    return `You logged this ${workout.type.toLowerCase()} as smoother than planned at effort ${input.effort}/10.`;
+    return `${sourceLabel} this ${workout.type.toLowerCase()} as smoother than planned at effort ${input.effort}/10.`;
   }
 
   return `${sourceLabel} effort ${input.effort}/10 with ${input.actualDistance.toFixed(1)} km completed.`;

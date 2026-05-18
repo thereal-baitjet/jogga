@@ -3,6 +3,8 @@ import {
   checkoutSessionAllowsAccess,
   enforceIpRateLimit,
   enforceSameOrigin,
+  findUserSubscriptionForAccess,
+  getAccessSourceForSubscriptionStatus,
   getPriceId,
   getRequestOrigin,
   getStripe,
@@ -19,27 +21,6 @@ import { FREE_TRIAL_DAYS, isTrialCheckout, normalizeBillingPlanId } from "../src
 
 function isValidStripeId(value: unknown, prefix: string) {
   return typeof value === "string" && value.startsWith(prefix) && value.trim().length > prefix.length;
-}
-
-function escapeStripeSearchValue(value: string) {
-  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
-
-async function findUserSubscription(stripe: Stripe, userId: string) {
-  const escapedUserId = escapeStripeSearchValue(userId);
-
-  for (const status of ["trialing", "active"]) {
-    const subscriptions = await stripe.subscriptions.search({
-      query: `metadata['userId']:'${escapedUserId}' AND status:'${status}'`,
-      limit: 1,
-    });
-
-    if (subscriptions.data[0]) {
-      return subscriptions.data[0];
-    }
-  }
-
-  return null;
 }
 
 function redirect(res: any, statusCode: number, location: string) {
@@ -59,6 +40,23 @@ function sendHtmlError(res: any, message: string, statusCode = 400) {
     "'": "&#39;",
   }[character] || character));
   res.end(`<!doctype html><html><head><title>Jogga Checkout Error</title></head><body style="font-family: system-ui; background: #09090b; color: #fafafa; padding: 32px;"><h1>Checkout could not start</h1><p>${safeMessage}</p><p><a style="color:#fafafa" href="/subscription">Return to Jogga</a></p></body></html>`);
+}
+
+function logCheckoutFailure(req: any, error: any) {
+  const message = error instanceof Error ? error.message : String(error);
+  const status = typeof error?.status === "number"
+    ? error.status
+    : message.includes("configured") ? 503 : 500;
+  const log = status >= 500 ? console.error : console.warn;
+
+  log("Checkout session creation failed", {
+    status,
+    code: typeof error?.code === "string" ? error.code : undefined,
+    message,
+    origin: req.headers?.origin || null,
+    referer: req.headers?.referer || null,
+    hasAuthorizationHeader: typeof (req.headers?.authorization || req.headers?.Authorization) === "string",
+  });
 }
 
 export async function handleCreateCheckoutSession(req: any, res: any) {
@@ -130,6 +128,7 @@ export async function handleCreateCheckoutSession(req: any, res: any) {
 
     return sendJson(res, 200, { url: session.url });
   } catch (error) {
+    logCheckoutFailure(req, error);
     return sendError(res, error);
   }
 }
@@ -160,6 +159,8 @@ export async function handleCreateBillingPortalSession(req: any, res: any) {
     }
 
     const stripe = getStripe();
+    const accessLookup = await findUserSubscriptionForAccess(stripe, user);
+    const matchedSubscription = accessLookup.subscription;
     let hasUserSubscriptionForCustomer = false;
 
     if (subscriptionId) {
@@ -170,19 +171,13 @@ export async function handleCreateBillingPortalSession(req: any, res: any) {
         return sendJson(res, 403, { error: "Subscription does not belong to this customer" });
       }
 
-      if (subscription.metadata?.userId !== user.uid) {
+      if (subscription.metadata?.userId !== user.uid && matchedSubscription?.id !== subscription.id) {
         return sendJson(res, 403, { error: "Subscription does not belong to this user" });
       }
 
       hasUserSubscriptionForCustomer = true;
     } else {
-      const subscriptions = await stripe.subscriptions.list({
-        customer: customerId,
-        limit: 10,
-        status: "all",
-      });
-
-      hasUserSubscriptionForCustomer = subscriptions.data.some(subscription => subscription.metadata?.userId === user.uid);
+      hasUserSubscriptionForCustomer = getStripeId(matchedSubscription?.customer as Stripe.Customer | string | null | undefined) === customerId;
     }
 
     if (!hasUserSubscriptionForCustomer) {
@@ -238,6 +233,7 @@ export async function handleCheckoutSession(req: any, res: any) {
 
     const subscriptionStatus = getSubscriptionStatus(session.subscription as Stripe.Subscription | null);
     const unlocked = checkoutSessionAllowsAccess(session, subscriptionStatus);
+    const accessSource = unlocked ? getAccessSourceForSubscriptionStatus(subscriptionStatus) : "none";
     let serverFulfilled = false;
 
     if (unlocked) {
@@ -256,6 +252,7 @@ export async function handleCheckoutSession(req: any, res: any) {
 
     return sendJson(res, 200, {
       unlocked,
+      accessSource,
       serverFulfilled,
       status: session.status,
       paymentStatus: session.payment_status,
@@ -264,6 +261,7 @@ export async function handleCheckoutSession(req: any, res: any) {
       subscriptionStatus,
       priceId: lineItems.data[0]?.price?.id || null,
       planId: session.metadata?.planId || null,
+      reason: unlocked ? accessSource : "checkout_incomplete",
     });
   } catch (error) {
     return sendError(res, error);
@@ -295,11 +293,12 @@ export async function handleSubscriptionStatus(req: any, res: any) {
   try {
     const user = await verifyFirebaseUserMatches(req, userId);
     const stripe = getStripe();
-    const subscription = await findUserSubscription(stripe, user.uid);
+    const { subscription } = await findUserSubscriptionForAccess(stripe, user);
     const subscriptionStatus = subscription?.cancel_at_period_end
       ? "canceling"
       : subscription?.status || null;
     const unlocked = isAccessSubscriptionStatus(subscriptionStatus);
+    const accessSource = unlocked ? getAccessSourceForSubscriptionStatus(subscriptionStatus) : "none";
     let serverFulfilled = false;
 
     if (subscription) {
@@ -321,6 +320,7 @@ export async function handleSubscriptionStatus(req: any, res: any) {
 
     return sendJson(res, 200, {
       unlocked,
+      accessSource,
       serverFulfilled,
       customerId: getStripeId(subscription?.customer as Stripe.Customer | string | null | undefined),
       subscriptionId: subscription?.id || null,
@@ -328,6 +328,7 @@ export async function handleSubscriptionStatus(req: any, res: any) {
       cancelAtPeriodEnd: subscription?.cancel_at_period_end || false,
       priceId: subscription?.items.data[0]?.price?.id || null,
       planId: subscription?.metadata?.planId || null,
+      reason: unlocked ? accessSource : subscription ? `subscription_${subscriptionStatus || "inactive"}` : "no_active_subscription",
     });
   } catch (error) {
     return sendError(res, error);

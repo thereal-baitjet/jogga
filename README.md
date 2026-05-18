@@ -10,7 +10,7 @@
 
 ![Jogga logo](public/mainLogo.png)
 
-Jogga is a production web app for adaptive running plans, GPS-tracked workouts, subscription access, and concise AI coaching. The app is built around deterministic training logic first: plan generation, mileage progression, readiness, rest-day handling, and workout adjustments do not depend on an LLM. AI is used only where it adds value, such as post-run coaching summaries and advanced coach explanations.
+Jogga is a production web app for private AI running coaching on top of Strava Free. Strava remains the running dashboard; Jogga imports runs read-only, calculates readiness and training load, and turns recent activity into consistency-first coaching without feeds, segments, or leaderboard pressure.
 
 Live app: [https://jogga.santosautomation.com](https://jogga.santosautomation.com)
 
@@ -29,8 +29,8 @@ Curated screenshots live in [docs/screenshots](docs/screenshots). Protected app 
 ## What It Does
 
 - Builds personalized running plans from experience level, race goal, target date, preferred training days, and weekly mileage.
-- Tracks real runs with GPS distance, pace, duration, route samples, and measurement metadata.
-- Generates readiness and training feedback from deterministic workout history.
+- Imports Strava runs read-only for distance, duration, elevation, recent load, and latest-run context.
+- Generates readiness and training feedback from deterministic workout and Strava history.
 - Shows post-run coaching insights grounded in measured run data.
 - Gates premium access through Stripe Checkout, Stripe Customer Portal, and verified webhooks.
 - Uses Firebase Auth for Google sign-in and Firestore for user profiles, workouts, subscription state, and AI usage controls.
@@ -130,12 +130,13 @@ Do not commit real secrets. Use `.env` locally and Vercel Environment Variables 
 | `OPENAI_API_KEY` | AI fallback provider key |
 | `OPENAI_TEXT_MODEL` | Optional OpenAI text model override |
 | `OPENAI_TTS_MODEL` | Optional OpenAI audio model override |
-| `VITE_GOOGLE_MAPS_API_KEY` | Optional browser key for route map images |
+| `FREE_ACCESS_EMAILS` | Comma-separated tester emails that receive free whitelisted access |
+| `FREE_ACCESS_UIDS` | Comma-separated Firebase UIDs that receive free whitelisted access |
 | `VITE_GA_MEASUREMENT_ID` | GA4 measurement ID |
 | `VITE_GOOGLE_OAUTH_CLIENT_ID` | Cordova Google OAuth web client ID |
 | `VITE_CORDOVA_GOOGLE_REDIRECT_URI` | Cordova OAuth callback URL |
-| `GOOGLE_CLIENT_ID` | Optional server-side Google Health fallback |
-| `GOOGLE_CLIENT_SECRET` | Optional server-side Google Health fallback |
+| `STRAVA_CLIENT_ID` | Server-side Strava OAuth client ID |
+| `STRAVA_CLIENT_SECRET` | Server-side Strava OAuth client secret |
 
 ## Stripe Setup
 
@@ -195,9 +196,9 @@ FIREBASE_CLIENT_EMAIL=
 FIREBASE_PRIVATE_KEY=
 ```
 
-## Google Health And Cordova OAuth
+## Strava And Cordova OAuth
 
-The web/PWA health connection uses Firebase Google reauthentication with Google Fitness read scopes. The optional server endpoints under `/api/auth/google-health/*` remain available as a fallback and require `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+Jogga uses Strava as the primary running and health-metrics data source. Strava OAuth is read-only and requests only `read` and `activity:read_all`; Jogga does not request write/post permissions and does not require Strava Premium.
 
 Cordova builds use `cordova-plugin-inappbrowser` and the browser-safe variables:
 

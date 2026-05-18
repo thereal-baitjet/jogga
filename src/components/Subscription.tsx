@@ -45,6 +45,20 @@ function getBillingPriceSuffix(plan: BillingPlan) {
   return plan.id === 'monthly' ? '/mo' : '/year';
 }
 
+function getCheckoutDisplayMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : '';
+
+  if (/Authentication required|Invalid or expired sign-in session|Invalid sign-in session/i.test(message)) {
+    return 'Your sign-in session expired. Sign in again, then start checkout.';
+  }
+
+  if (/Vercel Authentication|protected Vercel/i.test(message)) {
+    return 'This protected Vercel preview URL cannot start checkout. Open jogga.santosautomation.com and try again.';
+  }
+
+  return message || 'Unable to open checkout. Please refresh and try again.';
+}
+
 export default function Subscription({
   onBack,
   isUnlocked,
@@ -129,7 +143,7 @@ export default function Subscription({
     onCheckoutIntentHandled?.();
 
     try {
-      const idToken = await currentUser.getIdToken();
+      const idToken = await currentUser.getIdToken(true);
       const response = await fetch('/api/create-checkout-session', {
         method: 'POST',
         headers: {
@@ -151,12 +165,17 @@ export default function Subscription({
           status: response.status,
           bodyStart: text.slice(0, 200),
         });
+        if (text.includes('Vercel Authentication') || text.includes('Authentication Required')) {
+          throw new Error('Protected Vercel preview URL cannot start checkout.');
+        }
         throw new Error('Checkout API is not reachable. Check deployment routing.');
       }
 
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || 'Unable to start checkout.');
+        const serverMessage = typeof data.error === 'string' ? data.error : 'Unable to start checkout.';
+        const serverCode = typeof data.code === 'string' ? ` (${data.code})` : '';
+        throw new Error(`${serverMessage}${serverCode}`);
       }
 
       if (typeof data.url !== 'string' || !data.url.startsWith('https://')) {
@@ -166,6 +185,13 @@ export default function Subscription({
       window.location.assign(data.url);
     } catch (err) {
       console.error('Checkout redirect failed:', err);
+      const displayMessage = getCheckoutDisplayMessage(err);
+
+      trackEvent('checkout_redirect_failed', {
+        plan_id: plan.id,
+        trial,
+        message: displayMessage.slice(0, 140),
+      });
 
       if (ENABLE_EMERGENCY_CHECKOUT_LINKS) {
         const fallbackUrl = buildEmergencyCheckoutUrl(plan, userEmail);
@@ -181,7 +207,7 @@ export default function Subscription({
       }
 
       setLoading(null);
-      setError('Unable to open checkout. Please refresh and try again.');
+      setError(displayMessage);
     }
   };
 
@@ -206,7 +232,7 @@ export default function Subscription({
           </div>
           <h2 className="text-3xl font-light tracking-tight">Unlock Jogga</h2>
           <p className="text-zinc-500 text-sm leading-relaxed max-w-[280px] mx-auto">
-            Choose one plan below. Checkout opens securely on Stripe.
+            Private AI coaching layered on top of Strava Free. Checkout opens securely on Stripe.
           </p>
         </div>
 
@@ -276,14 +302,14 @@ export default function Subscription({
               <div className="flex justify-between items-start mb-4">
                 <div className="pr-4">
                   <div className="mb-2 inline-flex rounded-full bg-yellow-400/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-yellow-200 ring-1 ring-yellow-400/20">
-                    50% Off
+                    {plan.popular ? '67% less' : 'Strava Free'}
                   </div>
                   <h3 className="text-lg font-medium">{plan.name}</h3>
                   <p className="text-xs text-zinc-500">{plan.description}</p>
                 </div>
                 <div className="shrink-0 text-right">
                   <div className="text-xs text-zinc-500 line-through">
-                    Normally {plan.compareAtPrice}
+                    Strava+Runna {plan.compareAtPrice}
                   </div>
                   <div className="mt-1 text-2xl font-bold text-zinc-50">
                     Now {plan.price}

@@ -1,4 +1,4 @@
-import { enforceIpRateLimit, getClientIp, readJsonBody, sendError, sendJson } from "../_utils.js";
+import { enforceIpRateLimit, enforceSameOrigin, getClientIp, readJsonBody, sendError, sendJson } from "../_utils.js";
 
 const TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY || process.env.CF_TURNSTILE_SECRET_KEY;
 const TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
@@ -20,6 +20,7 @@ export default async function handler(req: any, res: any) {
       windowMs: 60 * 1000,
       message: "Too many verification attempts. Try again shortly.",
     });
+    enforceSameOrigin(req);
 
     if (!TURNSTILE_SECRET_KEY) {
       return sendJson(res, 503, {
@@ -28,7 +29,7 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    const body = await readJsonBody(req);
+    const body = await readJsonBody(req, { maxBytes: 4096 });
     const token = getBodyString(body?.token);
     const action = getBodyString(body?.action);
 

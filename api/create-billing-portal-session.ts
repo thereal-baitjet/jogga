@@ -1,4 +1,15 @@
-import { enforceIpRateLimit, getRequestOrigin, getStripe, getStripeId, readJsonBody, sendError, sendJson } from "./_utils.js";
+import {
+  enforceIpRateLimit,
+  enforceSameOrigin,
+  findUserSubscriptionForAccess,
+  getRequestOrigin,
+  getStripe,
+  getStripeId,
+  readJsonBody,
+  sendError,
+  sendJson,
+  verifyFirebaseUserMatches,
+} from "./_utils.js";
 
 function isValidStripeId(value: unknown, prefix: string) {
   return typeof value === "string" && value.startsWith(prefix) && value.trim().length > prefix.length;
@@ -16,8 +27,10 @@ export default async function handler(req: any, res: any) {
       windowMs: 60 * 1000,
       message: "Too many billing portal attempts. Try again in a minute.",
     });
+    enforceSameOrigin(req);
 
-    const { customerId, subscriptionId, userId } = await readJsonBody(req);
+    const { customerId, subscriptionId, userId } = await readJsonBody(req, { maxBytes: 4096 });
+    const user = await verifyFirebaseUserMatches(req, userId);
 
     if (!isValidStripeId(customerId, "cus_")) {
       return sendJson(res, 400, { error: "Valid Stripe customer ID is required" });
@@ -27,11 +40,10 @@ export default async function handler(req: any, res: any) {
       return sendJson(res, 400, { error: "Invalid Stripe subscription ID" });
     }
 
-    if (typeof userId !== "string" || userId.trim().length === 0) {
-      return sendJson(res, 400, { error: "User ID is required" });
-    }
-
     const stripe = getStripe();
+    const accessLookup = await findUserSubscriptionForAccess(stripe, user);
+    const matchedSubscription = accessLookup.subscription;
+    let hasUserSubscriptionForCustomer = false;
 
     if (subscriptionId) {
       const subscription = await stripe.subscriptions.retrieve(subscriptionId);
@@ -41,9 +53,17 @@ export default async function handler(req: any, res: any) {
         return sendJson(res, 403, { error: "Subscription does not belong to this customer" });
       }
 
-      if (subscription.metadata?.userId && subscription.metadata.userId !== userId) {
+      if (subscription.metadata?.userId !== user.uid && matchedSubscription?.id !== subscription.id) {
         return sendJson(res, 403, { error: "Subscription does not belong to this user" });
       }
+
+      hasUserSubscriptionForCustomer = true;
+    } else {
+      hasUserSubscriptionForCustomer = getStripeId(matchedSubscription?.customer as any) === customerId;
+    }
+
+    if (!hasUserSubscriptionForCustomer) {
+      return sendJson(res, 403, { error: "Customer does not belong to this user" });
     }
 
     const origin = getRequestOrigin(req);

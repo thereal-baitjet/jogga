@@ -6,6 +6,10 @@ import {
   axios,
 } from "../../_utils.js";
 
+function safeJsonForInlineScript(value: unknown) {
+  return JSON.stringify(value).replace(/</g, "\\u003c");
+}
+
 export default async function handler(req: any, res: any) {
   if (req.method !== "GET") {
     res.statusCode = 405;
@@ -57,7 +61,7 @@ export default async function handler(req: any, res: any) {
                 window.opener.postMessage({
                   type: 'OAUTH_AUTH_SUCCESS',
                   provider: 'google',
-                  tokens: ${JSON.stringify(tokens)}
+                  tokens: ${safeJsonForInlineScript(tokens)}
                 }, ${JSON.stringify(targetOrigin)});
                 setTimeout(() => window.close(), 1000);
               } else {

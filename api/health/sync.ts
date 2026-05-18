@@ -1,5 +1,5 @@
 import { getFirebaseAdminDb } from "../firebase-admin.js";
-import { axios, enforceIpRateLimit, readJsonBody, sendError, sendJson, verifyFirebaseUser } from "../_utils.js";
+import { axios, enforceIpRateLimit, enforceSameOrigin, readJsonBody, sendError, sendJson, verifyFirebaseUser } from "../_utils.js";
 
 const GOOGLE_FIT_DATA_TYPES = {
   steps: "com.google.step_count.delta",
@@ -108,12 +108,17 @@ export default async function handler(req: any, res: any) {
       windowMs: 60 * 1000,
       message: "Too many health sync attempts. Try again shortly.",
     });
+    enforceSameOrigin(req);
 
     const user = await verifyFirebaseUser(req);
-    const { accessToken } = await readJsonBody(req);
+    const { accessToken } = await readJsonBody(req, { maxBytes: 8192 });
 
     if (typeof accessToken !== "string" || accessToken.trim().length === 0) {
       return sendJson(res, 400, { error: "No access token provided" });
+    }
+
+    if (accessToken.length > 4096) {
+      return sendJson(res, 400, { error: "Invalid access token" });
     }
 
     const { date, startTimeMillis, endTimeMillis } = getTodayWindow();
